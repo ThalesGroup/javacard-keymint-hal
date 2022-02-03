@@ -93,10 +93,9 @@ bool OmapiTransport::internalTransmitApdu(
         std::vector<uint8_t> apdu, std::vector<uint8_t>& transmitResponse) {
     std::shared_ptr<aidl::android::se::omapi::ISecureElementSession> session;
     std::shared_ptr<aidl::android::se::omapi::ISecureElementChannel> channel;
-    auto mSEListener = std::make_shared<SEListener>();
+    auto mSEListener = ndk::SharedRefBase::make<SEListener>();
     std::vector<uint8_t> selectResponse = {};
-    std::vector<uint8_t> SELECTABLE_AID = {0xA0, 0x00, 0x00, 0x04, 0x76, 0x41, 0x6E, 0x64,
-        0x72, 0x6F, 0x69, 0x64, 0x43, 0x54, 0x53, 0x31};
+    std::vector<uint8_t> SELECTABLE_AID = {0xA0, 0x00, 0x00, 0x00, 0x18, 0x43, 0x43, 0x43, 0x43, 0x43, 0x42, 0x41, 0x01};
 
     LOG(DEBUG) << "internalTransmitApdu: trasmitting data to secure element";
 

@@ -54,7 +54,7 @@ keymaster_error_t JavacardSecureElement::constructApduMessage(Instruction& ins,
         // Case 1: Lc > 0  CLS | INS | P1 | P2 | 00 | 2 bytes of Lc | CommandData | 2 bytes of Le
         // all set to 00. Case 2: Lc = 0  CLS | INS | P1 | P2 | 3 bytes of Le all set to 00.
         // Extended length 3 bytes, starts with 0x00
-        apduOut.push_back(static_cast<uint8_t>(0x00));
+        /*apduOut.push_back(static_cast<uint8_t>(0x00));
         if (inputData.size() > 0) {
             apduOut.push_back(static_cast<uint8_t>(inputData.size() >> 8));
             apduOut.push_back(static_cast<uint8_t>(inputData.size() & 0xFF));
@@ -64,6 +64,14 @@ keymaster_error_t JavacardSecureElement::constructApduMessage(Instruction& ins,
         // Expected length of output.
         // Accepting complete length of output every time.
         apduOut.push_back(static_cast<uint8_t>(0x00));
+        apduOut.push_back(static_cast<uint8_t>(0x00));*/
+        if (inputData.size() > 0) {
+            apduOut.push_back(static_cast<uint8_t>(inputData.size() & 0xFF));
+            // Data
+            apduOut.insert(apduOut.end(), inputData.begin(), inputData.end());
+        }
+        // Expected length of output.
+        // Accepting complete length of output every time.
         apduOut.push_back(static_cast<uint8_t>(0x00));
     } else {
         LOG(ERROR) << "Error in constructApduMessage.";
