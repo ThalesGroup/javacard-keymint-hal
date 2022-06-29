@@ -18,7 +18,7 @@
 #include "JavacardKeyMintDevice.h"
 #include "JavacardKeyMintOperation.h"
 #include "JavacardSharedSecret.h"
-#include <KeyMintUtils.h>
+#include <JavacardKeyMintUtils.h>
 #include <algorithm>
 #include <android-base/logging.h>
 #include <android-base/properties.h>
@@ -33,6 +33,7 @@
 #include <vector>
 
 namespace aidl::android::hardware::security::keymint {
+using km_utils::KmParamSet;
 using namespace ::keymaster;
 using namespace ::keymint::javacard;
 
@@ -45,13 +46,6 @@ ScopedAStatus JavacardKeyMintDevice::defaultHwInfo(KeyMintHardwareInfo* info) {
     return ScopedAStatus::ok();
 }
 
-static inline bool findTag(const vector<KeyParameter>& params, Tag tag) {
-    size_t size = params.size();
-    for (size_t i = 0; i < size; ++i) {
-        if (tag == params[i].tag) return true;
-    }
-    return false;
-}
 
 ScopedAStatus JavacardKeyMintDevice::getHardwareInfo(KeyMintHardwareInfo* info) {
     uint64_t tsRequired = 1;
@@ -115,14 +109,8 @@ ScopedAStatus JavacardKeyMintDevice::importKey(const vector<KeyParameter>& keyPa
                                                KeyCreationResult* creationResult) {
 
     cppbor::Array request;
-    vector<KeyParameter> updatedParams(keyParams);
-    // Add CREATION_DATETIME if required, as secure element is not having clock.
-    if (!findTag(keyParams, Tag::CREATION_DATETIME) && !findTag(keyParams, Tag::ACTIVE_DATETIME)) {
-        updatedParams.push_back(km_utils::kmParam2Aidl(
-            keymaster_param_date(KM_TAG_CREATION_DATETIME, java_time(time(nullptr)))));
-    }
     // add key params
-    cbor_.addKeyparameters(request, updatedParams);
+    cbor_.addKeyparameters(request, keyParams);
     // add key format
     request.add(Uint(static_cast<uint8_t>(keyFormat)));
     // add key data

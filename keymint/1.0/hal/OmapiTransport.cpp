@@ -35,7 +35,7 @@ bool OmapiTransport::initialize() {
     LOG(DEBUG) << "Initialize the secure element connection";
 
     // Get OMAPI vendor stable service handler
-    ::ndk::SpAIBinder ks2Binder(AServiceManager_getService(omapiServiceName));
+    ::ndk::SpAIBinder ks2Binder(AServiceManager_checkService(omapiServiceName));
     omapiSeService = aidl::android::se::omapi::ISecureElementService::fromBinder(ks2Binder);
 
     if (omapiSeService == nullptr) {
@@ -60,8 +60,8 @@ bool OmapiTransport::initialize() {
         std::shared_ptr<::aidl::android::se::omapi::ISecureElementReader> reader;
         status = omapiSeService->getReader(readerName, &reader);
         if (!status.isOk()) {
-            LOG(ERROR) << "getReader for " << readerName.c_str() << " Failed: "
-                       << status.getMessage();
+            LOG(ERROR) << "getReader for " << readerName.c_str()
+                       << " Failed: " << status.getMessage();
             return false;
         }
 
@@ -89,8 +89,8 @@ bool OmapiTransport::initialize() {
 }
 
 bool OmapiTransport::internalTransmitApdu(
-        std::shared_ptr<aidl::android::se::omapi::ISecureElementReader> reader,
-        std::vector<uint8_t> apdu, std::vector<uint8_t>& transmitResponse) {
+    std::shared_ptr<aidl::android::se::omapi::ISecureElementReader> reader,
+    std::vector<uint8_t> apdu, std::vector<uint8_t>& transmitResponse) {
     std::shared_ptr<aidl::android::se::omapi::ISecureElementSession> session;
     std::shared_ptr<aidl::android::se::omapi::ISecureElementChannel> channel;
     auto mSEListener = ndk::SharedRefBase::make<SEListener>();
@@ -149,8 +149,8 @@ bool OmapiTransport::internalTransmitApdu(
     if (channel != nullptr) channel->close();
     if (session != nullptr) session->close();
 
-    LOG(INFO) << "STATUS OF TRNSMIT: " << res.getExceptionCode() << " Message: "
-              << res.getMessage();
+    LOG(INFO) << "STATUS OF TRNSMIT: " << res.getExceptionCode()
+              << " Message: " << res.getMessage();
     if (!res.isOk()) {
         LOG(ERROR) << "transmit error: " << res.getMessage();
         return false;
