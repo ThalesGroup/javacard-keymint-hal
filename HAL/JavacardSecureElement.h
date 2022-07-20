@@ -16,8 +16,9 @@
 
 #pragma once
 
-#include "CborConverter.h"
 #include <ITransport.h>
+
+#include "CborConverter.h"
 
 #define APDU_CLS 0x80
 #define APDU_P1 0x50
@@ -59,7 +60,7 @@ enum class Instruction {
     INS_UPDATE_AAD_OPERATION_CMD = KEYMINT_CMD_APDU_START + 23,
     INS_BEGIN_IMPORT_WRAPPED_KEY_CMD = KEYMINT_CMD_APDU_START + 24,
     INS_FINISH_IMPORT_WRAPPED_KEY_CMD = KEYMINT_CMD_APDU_START + 25,
-    INS_SET_BOOT_PARAMS_CMD = KEYMINT_CMD_APDU_START + 26,
+    INS_INIT_STRONGBOX_CMD = KEYMINT_CMD_APDU_START + 26,
     // RKP Commands
     INS_GET_RKP_HARDWARE_INFO = KEYMINT_CMD_APDU_START + 27,
     INS_GENERATE_RKP_KEY_CMD = KEYMINT_CMD_APDU_START + 28,
@@ -68,7 +69,11 @@ enum class Instruction {
     INS_UPDATE_EEK_CHAIN_CMD = KEYMINT_CMD_APDU_START + 31,
     INS_UPDATE_CHALLENGE_CMD = KEYMINT_CMD_APDU_START + 32,
     INS_FINISH_SEND_DATA_CMD = KEYMINT_CMD_APDU_START + 33,
-  INS_GET_RESPONSE_CMD = KEYMINT_CMD_APDU_START + 34,
+    INS_GET_RESPONSE_CMD = KEYMINT_CMD_APDU_START + 34,
+    // SE ROT Commands
+    INS_GET_ROT_CHALLENGE_CMD = KEYMINT_CMD_APDU_START + 45,
+    INS_GET_ROT_DATA_CMD = KEYMINT_CMD_APDU_START + 46,
+    INS_SEND_ROT_DATA_CMD = KEYMINT_CMD_APDU_START + 47,
 };
 
 class JavacardSecureElement {
@@ -76,7 +81,7 @@ class JavacardSecureElement {
     explicit JavacardSecureElement(shared_ptr<ITransport> transport, uint32_t osVersion,
                                    uint32_t osPatchLevel, uint32_t vendorPatchLevel)
         : transport_(transport), osVersion_(osVersion), osPatchLevel_(osPatchLevel),
-          vendorPatchLevel_(vendorPatchLevel) {
+          vendorPatchLevel_(vendorPatchLevel), isEarlyBootEventPending(false) {
         transport_->openConnection();
     }
     virtual ~JavacardSecureElement() { transport_->closeConnection(); }
@@ -92,6 +97,7 @@ class JavacardSecureElement {
     keymaster_error_t constructApduMessage(Instruction& ins, std::vector<uint8_t>& inputData,
                                            std::vector<uint8_t>& apduOut);
     keymaster_error_t initializeJavacard();
+    keymaster_error_t sendEarlyBootEndedEvent(bool eventTriggered);
     inline uint16_t getApduStatus(std::vector<uint8_t>& inputData) {
         // Last two bytes are the status SW0SW1
         uint8_t SW0 = inputData.at(inputData.size() - 2);
@@ -103,6 +109,7 @@ class JavacardSecureElement {
     uint32_t osVersion_;
     uint32_t osPatchLevel_;
     uint32_t vendorPatchLevel_;
+    bool isEarlyBootEventPending;
     CborConverter cbor_;
 };
 }  // namespace keymint::javacard

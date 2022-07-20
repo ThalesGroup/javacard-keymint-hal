@@ -17,10 +17,13 @@
 #define LOG_TAG "javacard.strongbox.keymint.operation-impl"
 
 #include "JavacardKeyMintOperation.h"
-#include <JavacardKeyMintUtils.h>
+
 #include <aidl/android/hardware/security/keymint/ErrorCode.h>
 #include <aidl/android/hardware/security/secureclock/ISecureClock.h>
 #include <android-base/logging.h>
+
+#include "CborConverter.h"
+#include "JavacardKeyMintUtils.h"
 
 namespace aidl::android::hardware::security::keymint {
 using namespace ::keymint::javacard;
@@ -59,7 +62,7 @@ ScopedAStatus JavacardKeyMintOperation::update(const vector<uint8_t>& input,
         return km_utils::kmError2ScopedAStatus(err);
     }
     if (!(bufferingMode_ == BufferingMode::EC_NO_DIGEST ||
-          bufferingMode_ == BufferingMode::RSA_NO_DIGEST)) {
+          bufferingMode_ == BufferingMode::RSA_DECRYPT_OR_NO_DIGEST)) {
         if (view.length > MAX_CHUNK_SIZE) {
             err = updateInChunks(view, aToken, tToken, output);
             if (err != KM_ERROR_OK) {
@@ -83,7 +86,7 @@ ScopedAStatus JavacardKeyMintOperation::finish(
     DataView view = {.buffer = {}, .data = inData, .start = 0, .length = inData.size()};
     const vector<uint8_t> sign = signature.value_or(vector<uint8_t>());
     if (!(bufferingMode_ == BufferingMode::EC_NO_DIGEST ||
-          bufferingMode_ == BufferingMode::RSA_NO_DIGEST)) {
+          bufferingMode_ == BufferingMode::RSA_DECRYPT_OR_NO_DIGEST)) {
         appendBufferedData(view);  
         if (view.length > MAX_CHUNK_SIZE) {
             auto err = updateInChunks(view, aToken, tToken, output);
@@ -163,7 +166,7 @@ uint16_t JavacardKeyMintOperation::getDataViewOffset(DataView& view, uint16_t bl
 keymaster_error_t JavacardKeyMintOperation::bufferData(DataView& view) {
     if (view.data.empty()) return KM_ERROR_OK;  // nothing to buffer
     switch (bufferingMode_) {
-    case BufferingMode::RSA_NO_DIGEST:
+    case BufferingMode::RSA_DECRYPT_OR_NO_DIGEST:
         buffer_.insert(buffer_.end(), view.data.begin(), view.data.end());
         if (buffer_.size() > RSA_BUFFER_SIZE) {
             abort();
@@ -257,11 +260,11 @@ keymaster_error_t JavacardKeyMintOperation::sendUpdate(const vector<uint8_t>& in
     if (error != KM_ERROR_OK) {
         return error;
     }
-    vector<uint8_t> respData;
-    if (!cbor_.getBinaryArray(item, 1, respData)) {
+    auto optTemp = cbor_.getByteArrayVec(item, 1);
+    if (!optTemp) {
         return KM_ERROR_UNKNOWN_ERROR;
     }
-    output.insert(output.end(), respData.begin(), respData.end());
+    output.insert(output.end(), optTemp.value().begin(), optTemp.value().end());
     return KM_ERROR_OK;
 }
 
@@ -283,12 +286,12 @@ keymaster_error_t JavacardKeyMintOperation::sendFinish(const vector<uint8_t>& da
     if (err != KM_ERROR_OK) {
         return err;
     }
-    vector<uint8_t> respData;
-    if (!cbor_.getBinaryArray(item, 1, respData)) {
+    auto optTemp = cbor_.getByteArrayVec(item, 1);
+    if (!optTemp) {
         return KM_ERROR_UNKNOWN_ERROR;
     }
     opHandle_ = 0;
-    output.insert(output.end(), respData.begin(), respData.end());
+    output.insert(output.end(), optTemp.value().begin(), optTemp.value().end());
     return KM_ERROR_OK;
 }
 
