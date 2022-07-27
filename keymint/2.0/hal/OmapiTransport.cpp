@@ -30,7 +30,7 @@ namespace keymint::javacard {
 constexpr uint8_t SELECTABLE_AID[] = {0xA0, 0x00, 0x00, 0x00, 0x18, 0x43, 0x43, 0x43, 0x43, 0x43, 0x42, 0x41, 0x01};
 std::string const ESE_READER_PREFIX = "eSE";
 constexpr const char omapiServiceName[] =
-        "android.system.omapi.ISecureElementService/default";
+        "android.se.omapi.ISecureElementService/default";
 
 class SEListener : public ::aidl::android::se::omapi::BnSecureElementListener {};
 
@@ -192,9 +192,7 @@ bool OmapiTransport::internalTransmitApdu(
         return false;
     }
 
-    if ((selectResponse.size() < 2) 
-        || ((selectResponse[selectResponse.size() -1] & 0xFF) == 0x00) 
-        || ((selectResponse[selectResponse.size() -2] & 0xFF) == 0x90))
+    if (selectResponse.size() < 2)
     {
         LOG(ERROR) << "Failed to select the Applet.";
         return false;
