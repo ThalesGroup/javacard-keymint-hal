@@ -247,6 +247,8 @@ keymaster_error_t OmapiTransport::sendData(const vector<uint8_t>& inData, vector
 
 keymaster_error_t OmapiTransport::closeConnection() {
     LOG(DEBUG) << "Closing all connections";
+    if (channel != nullptr) channel->close();
+    if (session != nullptr) session->close();
     if (omapiSeService != nullptr) {
         if (mVSReaders.size() > 0) {
             for (const auto& [name, reader] : mVSReaders) {
@@ -255,8 +257,6 @@ keymaster_error_t OmapiTransport::closeConnection() {
             mVSReaders.clear();
         }
     }
-    if (channel != nullptr) channel->close();
-    if (session != nullptr) session->close();
     return KM_ERROR_OK;
 }
 
