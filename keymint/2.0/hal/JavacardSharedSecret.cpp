@@ -41,11 +41,11 @@ JavacardSharedSecret::computeSharedSecret(const std::vector<SharedSecretParamete
         LOG(ERROR) << "Error in sending earlyBoot event javacard.";
         return km_utils::kmError2ScopedAStatus(error);
     }
-    error = card_->initializeJavacard();
+    /*error = card_->initializeJavacard();
     if(error != KM_ERROR_OK) {
         LOG(ERROR) << "Error in initializing javacard.";
         return km_utils::kmError2ScopedAStatus(error);    
-    }
+    }*/
     cppbor::Array request;
     cbor_.addSharedSecretParameters(request, params);
     auto [item, err] = card_->sendRequest(Instruction::INS_COMPUTE_SHARED_SECRET_CMD, request);
