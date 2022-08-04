@@ -1,5 +1,3 @@
 service vendor.keymint-strongbox /vendor/bin/hw/android.hardware.security.keymint-service.strongbox-thales
     class early_hal
-    user root
-    group root
-    seclabel u:r:su:s0
+    user jc_strongbox
