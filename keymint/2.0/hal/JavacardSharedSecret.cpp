@@ -13,11 +13,11 @@ using std::shared_ptr;
 using std::vector;
 
 ScopedAStatus JavacardSharedSecret::getSharedSecretParameters(SharedSecretParameters* params) {
-    auto error = card_->initializeJavacard();
+    /*auto error = card_->initializeJavacard();
     if(error != KM_ERROR_OK) {
         LOG(ERROR) << "Error in initializing javacard.";
         return km_utils::kmError2ScopedAStatus(error);    
-    }
+    }*/
     auto [item, err] = card_->sendRequest(Instruction::INS_GET_SHARED_SECRET_PARAM_CMD);
     if (err != KM_ERROR_OK) {
         LOG(ERROR) << "Error in sending in getSharedSecretParameters.";
