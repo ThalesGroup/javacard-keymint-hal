@@ -82,6 +82,7 @@ class JavacardSecureElement {
                                    uint32_t osPatchLevel, uint32_t vendorPatchLevel)
         : transport_(transport), osVersion_(osVersion), osPatchLevel_(osPatchLevel),
           vendorPatchLevel_(vendorPatchLevel), isEarlyBootEventPending(false) {
+        initialized = false;
         transport_->openConnection();
     }
     virtual ~JavacardSecureElement() { transport_->closeConnection(); }
@@ -111,5 +112,6 @@ class JavacardSecureElement {
     uint32_t vendorPatchLevel_;
     bool isEarlyBootEventPending;
     CborConverter cbor_;
+    bool initialized;
 };
 }  // namespace keymint::javacard
