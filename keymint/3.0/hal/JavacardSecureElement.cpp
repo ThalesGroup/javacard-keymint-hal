@@ -88,15 +88,6 @@ keymaster_error_t JavacardSecureElement::constructApduMessage(Instruction& ins,
         // Accepting complete length of output every time.
         apduOut.push_back(static_cast<uint8_t>(0x00));
         apduOut.push_back(static_cast<uint8_t>(0x00));
-        //In case classic APDU only support is needed
-        /*if (inputData.size() > 0) {
-            apduOut.push_back(static_cast<uint8_t>(inputData.size() & 0xFF));
-            // Data
-            apduOut.insert(apduOut.end(), inputData.begin(), inputData.end());
-        }
-        // Expected length of output.
-        // Accepting complete length of output every time.
-        apduOut.push_back(static_cast<uint8_t>(0x00));*/
     } else {
         LOG(ERROR) << "Error in constructApduMessage.";
         return (KM_ERROR_INVALID_INPUT_LENGTH);
