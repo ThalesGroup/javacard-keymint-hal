@@ -25,14 +25,15 @@
 #include "JavacardSecureElement.h"
 
 namespace aidl::android::hardware::security::keymint {
-using namespace ::keymint::javacard;
-using namespace aidl::android::hardware::security::sharedsecret;
-using namespace aidl::android::hardware::security::secureclock;
+using cppbor::Item;
+using ::keymint::javacard::CborConverter;
+using ::keymint::javacard::JavacardSecureElement;
 using ndk::ScopedAStatus;
+using secureclock::TimeStampToken;
+using std::array;
 using std::optional;
 using std::shared_ptr;
 using std::vector;
-using std::array;
 
 class JavacardKeyMintDevice : public BnKeyMintDevice {
   public:
@@ -87,7 +88,7 @@ class JavacardKeyMintDevice : public BnKeyMintDevice {
 
     ScopedAStatus convertStorageKeyToEphemeral(const std::vector<uint8_t>& storageKeyBlob,
                                                std::vector<uint8_t>* ephemeralKeyBlob) override;
-    
+
     ScopedAStatus getRootOfTrustChallenge(array<uint8_t, 16>* challenge) override;
 
     ScopedAStatus getRootOfTrust(const array<uint8_t, 16>& challenge,

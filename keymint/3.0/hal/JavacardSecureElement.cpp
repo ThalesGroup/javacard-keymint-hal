@@ -25,17 +25,14 @@
 #include <string>
 #include <vector>
 
-#include <keymaster/android_keymaster_messages.h>
 #include <android-base/logging.h>
 #include <android-base/properties.h>
+#include <keymaster/android_keymaster_messages.h>
 
 #include "keymint_utils.h"
 
-
-
 namespace keymint::javacard {
 
-using namespace ::keymaster;
 keymaster_error_t JavacardSecureElement::initializeJavacard() {
     Array request;
     request.add(Uint(getOsVersion()));
@@ -49,19 +46,32 @@ keymaster_error_t JavacardSecureElement::initializeJavacard() {
     return err;
 }
 
-keymaster_error_t JavacardSecureElement::sendEarlyBootEndedEvent(bool eventTriggered) {
-    isEarlyBootEventPending |= eventTriggered;
-    if (!isEarlyBootEventPending) {
-        return KM_ERROR_OK;
+void JavacardSecureElement::setDeleteAllKeysPending() {
+    isDeleteAllKeysPending = true;
+}
+
+void JavacardSecureElement::setEarlyBootEndedPending() {
+    isEarlyBootEndedPending = true;
+}
+
+void JavacardSecureElement::sendPendingEvents() {
+    if (isDeleteAllKeysPending) {
+        auto [_, err] = sendRequest(Instruction::INS_DELETE_ALL_KEYS_CMD);
+        if (err == KM_ERROR_OK) {
+            isDeleteAllKeysPending = false;
+        } else {
+            LOG(ERROR) << "Error in sending deleteAllKeys.";
+        }
     }
-    auto [item, err] = sendRequest(Instruction::INS_EARLY_BOOT_ENDED_CMD);
-    if (err != KM_ERROR_OK) {
-        // Incase of failure cache the event and send in the next immediate request to Applet.
-        isEarlyBootEventPending = true;
-        return err;
+
+    if (isEarlyBootEndedPending) {
+        auto [_, err] = sendRequest(Instruction::INS_EARLY_BOOT_ENDED_CMD);
+        if (err == KM_ERROR_OK) {
+            isEarlyBootEndedPending = false;
+        } else {
+            LOG(ERROR) << "Error in sending earlyBootEnded.";
+        }
     }
-    isEarlyBootEventPending = false;
-    return KM_ERROR_OK;
 }
 
 keymaster_error_t JavacardSecureElement::constructApduMessage(Instruction& ins,

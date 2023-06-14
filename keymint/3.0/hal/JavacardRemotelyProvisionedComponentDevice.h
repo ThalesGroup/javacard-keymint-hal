@@ -22,60 +22,59 @@
 #include <aidl/android/hardware/security/keymint/RpcHardwareInfo.h>
 #include <aidl/android/hardware/security/keymint/SecurityLevel.h>
 
-#include <keymaster/android_keymaster.h>
 #include <keymaster/UniquePtr.h>
+#include <keymaster/android_keymaster.h>
 
 #include "CborConverter.h"
 #include "JavacardSecureElement.h"
 
 namespace aidl::android::hardware::security::keymint {
-using namespace ::keymint::javacard;
+using ::keymint::javacard::CborConverter;
+using ::keymint::javacard::JavacardSecureElement;
 using ndk::ScopedAStatus;
+using std::shared_ptr;
 
-class JavacardRemotelyProvisionedComponentDevice
-    : public BnRemotelyProvisionedComponent {
- public:
-  explicit JavacardRemotelyProvisionedComponentDevice(
-      shared_ptr<JavacardSecureElement> card)
-      : card_(card) {}
+class JavacardRemotelyProvisionedComponentDevice : public BnRemotelyProvisionedComponent {
+  public:
+    explicit JavacardRemotelyProvisionedComponentDevice(shared_ptr<JavacardSecureElement> card)
+        : card_(card) {}
 
-  virtual ~JavacardRemotelyProvisionedComponentDevice() = default;
+    virtual ~JavacardRemotelyProvisionedComponentDevice() = default;
 
-  ScopedAStatus getHardwareInfo(RpcHardwareInfo* info) override;
+    ScopedAStatus getHardwareInfo(RpcHardwareInfo* info) override;
 
-  ScopedAStatus generateEcdsaP256KeyPair(
-      bool testMode, MacedPublicKey* macedPublicKey,
-      std::vector<uint8_t>* privateKeyHandle) override;
+    ScopedAStatus generateEcdsaP256KeyPair(bool testMode, MacedPublicKey* macedPublicKey,
+                                           std::vector<uint8_t>* privateKeyHandle) override;
 
-  ScopedAStatus generateCertificateRequest(
-      bool testMode, const std::vector<MacedPublicKey>& keysToSign,
-      const std::vector<uint8_t>& endpointEncCertChain,
-      const std::vector<uint8_t>& challenge, DeviceInfo* deviceInfo,
-      ProtectedData* protectedData,
-      std::vector<uint8_t>* keysToSignMac) override;
+    ScopedAStatus generateCertificateRequest(bool testMode,
+                                             const std::vector<MacedPublicKey>& keysToSign,
+                                             const std::vector<uint8_t>& endpointEncCertChain,
+                                             const std::vector<uint8_t>& challenge,
+                                             DeviceInfo* deviceInfo, ProtectedData* protectedData,
+                                             std::vector<uint8_t>* keysToSignMac) override;
 
-  ScopedAStatus generateCertificateRequestV2(
-      const std::vector<MacedPublicKey>& keysToSign,
-      const std::vector<uint8_t>& challenge,
-      std::vector<uint8_t>* csr) override;
+    ScopedAStatus generateCertificateRequestV2(const std::vector<MacedPublicKey>& keysToSign,
+                                               const std::vector<uint8_t>& challenge,
+                                               std::vector<uint8_t>* csr) override;
 
- private:
-  ScopedAStatus beginSendData(const std::vector<MacedPublicKey>& keysToSign, 
-    const std::vector<uint8_t>& challenge, DeviceInfo* deviceInfo, uint32_t* version,
-    std::string* certificateType);
+  private:
+    ScopedAStatus beginSendData(const std::vector<MacedPublicKey>& keysToSign,
+                                const std::vector<uint8_t>& challenge, DeviceInfo* deviceInfo,
+                                uint32_t* version, std::string* certificateType);
 
-  ScopedAStatus updateMacedKey(const std::vector<MacedPublicKey>& keysToSign, Array& coseKeys);
+    ScopedAStatus updateMacedKey(const std::vector<MacedPublicKey>& keysToSign,
+                                 cppbor::Array& coseKeys);
 
-  ScopedAStatus finishSendData(std::vector<uint8_t>& coseEncryptProtectedHeader,
-    std::vector<uint8_t>& signature, uint32_t& version, uint32_t& respFlag) ;
+    ScopedAStatus finishSendData(std::vector<uint8_t>& coseEncryptProtectedHeader,
+                                 std::vector<uint8_t>& signature, uint32_t& version,
+                                 uint32_t& respFlag);
 
-  ScopedAStatus getResponse(std::vector<uint8_t>& partialCipheredData,
-                            cppbor::Array& recepientStructure,
-                            uint32_t& respFlag);
-  ScopedAStatus getDiceCertChain(std::vector<uint8_t>& diceCertChain);
-  ScopedAStatus getUdsCertsChain(std::vector<uint8_t>& udsCertsChain);
-  std::shared_ptr<JavacardSecureElement> card_;
-  CborConverter cbor_;
+    ScopedAStatus getResponse(std::vector<uint8_t>& partialCipheredData,
+                              cppbor::Array& recepientStructure, uint32_t& respFlag);
+    ScopedAStatus getDiceCertChain(std::vector<uint8_t>& diceCertChain);
+    ScopedAStatus getUdsCertsChain(std::vector<uint8_t>& udsCertsChain);
+    std::shared_ptr<JavacardSecureElement> card_;
+    CborConverter cbor_;
 };
 
 }  // namespace aidl::android::hardware::security::keymint

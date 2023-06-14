@@ -18,28 +18,35 @@
 
 #include <aidl/android/hardware/security/keymint/SecurityLevel.h>
 
-#include <android/binder_manager.h>
-#include <android/binder_process.h>
 #include <android-base/logging.h>
 #include <android-base/properties.h>
+#include <android/binder_manager.h>
+#include <android/binder_process.h>
 
 #include "JavacardKeyMintDevice.h"
+#include "JavacardRemotelyProvisionedComponentDevice.h"
 #include "JavacardSecureElement.h"
 #include "JavacardSharedSecret.h"
-#include "JavacardRemotelyProvisionedComponentDevice.h"
-#include "keymint_utils.h"
 #include "OmapiTransport.h"
 #include "SocketTransport.h"
+#include "keymint_utils.h"
 
 using aidl::android::hardware::security::keymint::JavacardKeyMintDevice;
-using aidl::android::hardware::security::keymint::JavacardSharedSecret;
+using aidl::android::hardware::security::keymint::JavacardRemotelyProvisionedComponentDevice;
 using aidl::android::hardware::security::keymint::SecurityLevel;
-using namespace keymint::javacard;
+using aidl::android::hardware::security::sharedsecret::JavacardSharedSecret;
+using keymint::javacard::getOsPatchlevel;
+using keymint::javacard::getOsVersion;
+using keymint::javacard::getVendorPatchlevel;
+using keymint::javacard::ITransport;
+using keymint::javacard::JavacardSecureElement;
+using keymint::javacard::OmapiTransport;
+using keymint::javacard::SocketTransport;
 
-#define PROP_BUILD_QEMU              "ro.kernel.qemu"
-#define PROP_BUILD_FINGERPRINT       "ro.build.fingerprint"
+#define PROP_BUILD_QEMU "ro.kernel.qemu"
+#define PROP_BUILD_FINGERPRINT "ro.build.fingerprint"
 // Cuttlefish build fingerprint substring.
-#define CUTTLEFISH_FINGERPRINT_SS    "aosp_cf_"
+#define CUTTLEFISH_FINGERPRINT_SS "aosp_cf_"
 
 template <typename T, class... Args> std::shared_ptr<T> addService(Args&&... args) {
     std::shared_ptr<T> ser = ndk::SharedRefBase::make<T>(std::forward<Args>(args)...);
@@ -75,8 +82,7 @@ int main() {
     ABinderProcess_setThreadPoolMaxThreadCount(0);
     // Javacard Secure Element
     std::shared_ptr<JavacardSecureElement> card =
-        std::make_shared<JavacardSecureElement>(getTransportInstance(), getOsVersion(),
-                                                getOsPatchlevel(), getVendorPatchlevel());
+        std::make_shared<JavacardSecureElement>(getTransportInstance());
     // Add Keymint Service
     addService<JavacardKeyMintDevice>(card);
     // Add Shared Secret Service

@@ -10,9 +10,9 @@
 #include "JavacardSecureElement.h"
 
 namespace aidl::android::hardware::security::sharedsecret {
-using namespace ::keymint::javacard;
+using ::keymint::javacard::CborConverter;
+using ::keymint::javacard::JavacardSecureElement;
 using ndk::ScopedAStatus;
-using std::optional;
 using std::shared_ptr;
 using std::vector;
 

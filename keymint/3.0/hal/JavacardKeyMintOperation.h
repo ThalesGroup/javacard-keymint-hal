@@ -30,28 +30,33 @@
 #define RSA_BUFFER_SIZE 256
 #define EC_BUFFER_SIZE 32
 #define MAX_CHUNK_SIZE 256
+
 namespace aidl::android::hardware::security::keymint {
-using namespace ::keymint::javacard;
+using cppbor::Array;
+using cppbor::Item;
+using ::keymint::javacard::CborConverter;
+using ::keymint::javacard::Instruction;
+using ::keymint::javacard::JavacardSecureElement;
 using ::ndk::ScopedAStatus;
 using secureclock::TimeStampToken;
 using std::optional;
 using std::shared_ptr;
-using std::string;
 using std::vector;
 
 // Bufferig modes for update
 enum class BufferingMode : int32_t {
-    NONE = 0,                     // Send everything to javacard - most of the assymteric operations
-    RSA_DECRYPT_OR_NO_DIGEST = 1, // Buffer everything in update upto 256 bytes and send in finish. If
-                                  // input data is greater then 256 bytes then it is an error. Javacard
-                                  // will further check according to exact key size and crypto provider.
-    EC_NO_DIGEST = 2,             // Buffer upto 65 bytes and then truncate. Javacard will further truncate
-                        // upto exact keysize.
-    BUF_AES_ENCRYPT_PKCS7_BLOCK_ALIGNED = 3, // Buffer 16 bytes.
-    BUF_AES_DECRYPT_PKCS7_BLOCK_ALIGNED = 4, // Buffer 16 bytes.
-    BUF_DES_ENCRYPT_PKCS7_BLOCK_ALIGNED = 5, // Buffer 8 bytes.
-    BUF_DES_DECRYPT_PKCS7_BLOCK_ALIGNED = 6, // Buffer 8 bytes.
-    BUF_AES_GCM_DECRYPT_BLOCK_ALIGNED = 7, // Buffer 16 bytes.
+    NONE = 0,  // Send everything to javacard - most of the assymteric operations
+    RSA_DECRYPT_OR_NO_DIGEST =
+        1,             // Buffer everything in update upto 256 bytes and send in finish. If
+                       // input data is greater then 256 bytes then it is an error. Javacard
+                       // will further check according to exact key size and crypto provider.
+    EC_NO_DIGEST = 2,  // Buffer upto 65 bytes and then truncate. Javacard will further truncate
+                       // upto exact keysize.
+    BUF_AES_ENCRYPT_PKCS7_BLOCK_ALIGNED = 3,  // Buffer 16 bytes.
+    BUF_AES_DECRYPT_PKCS7_BLOCK_ALIGNED = 4,  // Buffer 16 bytes.
+    BUF_DES_ENCRYPT_PKCS7_BLOCK_ALIGNED = 5,  // Buffer 8 bytes.
+    BUF_DES_DECRYPT_PKCS7_BLOCK_ALIGNED = 6,  // Buffer 8 bytes.
+    BUF_AES_GCM_DECRYPT_BLOCK_ALIGNED = 7,    // Buffer 16 bytes.
 
 };
 
@@ -67,11 +72,10 @@ struct DataView {
 class JavacardKeyMintOperation : public BnKeyMintOperation {
   public:
     explicit JavacardKeyMintOperation(keymaster_operation_handle_t opHandle,
-                                      BufferingMode bufferingMode,
-                                      uint16_t macLength,
+                                      BufferingMode bufferingMode, uint16_t macLength,
                                       shared_ptr<JavacardSecureElement> card)
         : buffer_(vector<uint8_t>()), bufferingMode_(bufferingMode), macLength_(macLength),
-          card_(card), opHandle_(opHandle)  {}
+          card_(card), opHandle_(opHandle) {}
     virtual ~JavacardKeyMintOperation();
 
     ScopedAStatus updateAad(const vector<uint8_t>& input,
@@ -99,7 +103,8 @@ class JavacardKeyMintOperation : public BnKeyMintOperation {
 
     keymaster_error_t sendFinish(const vector<uint8_t>& data, const vector<uint8_t>& signature,
                                  const HardwareAuthToken& authToken,
-                                 const TimeStampToken& timestampToken, const vector<uint8_t>& confToken, vector<uint8_t>& output);
+                                 const TimeStampToken& timestampToken,
+                                 const vector<uint8_t>& confToken, vector<uint8_t>& output);
 
     keymaster_error_t sendUpdate(const vector<uint8_t>& data, const HardwareAuthToken& authToken,
                                  const TimeStampToken& timestampToken, vector<uint8_t>& output);

@@ -28,8 +28,6 @@
 #define KEYMINT_CMD_APDU_START 0x20
 
 namespace keymint::javacard {
-using ndk::ScopedAStatus;
-using std::optional;
 using std::shared_ptr;
 using std::vector;
 
@@ -80,10 +78,8 @@ enum class Instruction {
 
 class JavacardSecureElement {
   public:
-    explicit JavacardSecureElement(shared_ptr<ITransport> transport, uint32_t osVersion,
-                                   uint32_t osPatchLevel, uint32_t vendorPatchLevel)
-        : transport_(transport), osVersion_(osVersion), osPatchLevel_(osPatchLevel),
-          vendorPatchLevel_(vendorPatchLevel), isEarlyBootEventPending(false) {
+    explicit JavacardSecureElement(shared_ptr<ITransport> transport)
+        : transport_(transport), isEarlyBootEndedPending(false), isDeleteAllKeysPending(false) {
         initialized = false;
         transport_->openConnection();
     }
@@ -92,7 +88,8 @@ class JavacardSecureElement {
     std::tuple<std::unique_ptr<Item>, keymaster_error_t> sendRequest(Instruction ins,
                                                                      Array& request);
     std::tuple<std::unique_ptr<Item>, keymaster_error_t> sendRequest(Instruction ins);
-    std::tuple<std::unique_ptr<Item>, keymaster_error_t> sendRequest(Instruction ins, std::vector<uint8_t>& command);
+    std::tuple<std::unique_ptr<Item>, keymaster_error_t> sendRequest(Instruction ins,
+                                                                     std::vector<uint8_t>& command);
 
     keymaster_error_t sendData(Instruction ins, std::vector<uint8_t>& inData,
                                std::vector<uint8_t>& response);
@@ -100,7 +97,10 @@ class JavacardSecureElement {
     keymaster_error_t constructApduMessage(Instruction& ins, std::vector<uint8_t>& inputData,
                                            std::vector<uint8_t>& apduOut);
     keymaster_error_t initializeJavacard();
-    keymaster_error_t sendEarlyBootEndedEvent(bool eventTriggered);
+    void sendPendingEvents();
+    void setEarlyBootEndedPending();
+    void setDeleteAllKeysPending();
+
     inline uint16_t getApduStatus(std::vector<uint8_t>& inputData) {
         // Last two bytes are the status SW0SW1
         uint8_t SW0 = inputData.at(inputData.size() - 2);
@@ -108,11 +108,10 @@ class JavacardSecureElement {
         return (SW0 << 8 | SW1);
     }
 
+  private:
     shared_ptr<ITransport> transport_;
-    uint32_t osVersion_;
-    uint32_t osPatchLevel_;
-    uint32_t vendorPatchLevel_;
-    bool isEarlyBootEventPending;
+    bool isEarlyBootEndedPending;
+    bool isDeleteAllKeysPending;
     CborConverter cbor_;
     bool initialized;
 };

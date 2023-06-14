@@ -49,7 +49,7 @@ uint32_t match_to_uint32(const char* expression, const regmatch_t& match) {
 std::string wait_and_get_property(const char* prop) {
     std::string prop_value;
     while (!::android::base::WaitForPropertyCreation(prop))
-    ;
+        ;
     prop_value = ::android::base::GetProperty(prop, "" /* default */);
     return prop_value;
 }
@@ -98,15 +98,15 @@ uint32_t getPatchlevel(const char* patchlevel_str, PatchlevelOutput detail) {
     }
 
     switch (detail) {
-        case PatchlevelOutput::kYearMonthDay: {
-            uint32_t day = match_to_uint32(patchlevel_str, matches[kDayMatch]);
-            if (day < 1 || day > 31) {
-                return 0;
-            }
-            return year * 10000 + month * 100 + day;
+    case PatchlevelOutput::kYearMonthDay: {
+        uint32_t day = match_to_uint32(patchlevel_str, matches[kDayMatch]);
+        if (day < 1 || day > 31) {
+            return 0;
         }
-        case PatchlevelOutput::kYearMonth:
-            return year * 100 + month;
+        return year * 10000 + month * 100 + day;
+    }
+    case PatchlevelOutput::kYearMonth:
+        return year * 100 + month;
     }
 }
 
