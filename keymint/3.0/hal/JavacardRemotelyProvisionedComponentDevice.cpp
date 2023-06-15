@@ -115,9 +115,10 @@ ScopedAStatus JavacardRemotelyProvisionedComponentDevice::getHardwareInfo(RpcHar
 
 ScopedAStatus JavacardRemotelyProvisionedComponentDevice::generateEcdsaP256KeyPair(
     bool testMode, MacedPublicKey* macedPublicKey, std::vector<uint8_t>* privateKeyHandle) {
-    cppbor::Array array;
-    array.add(testMode);
-    auto [item, err] = card_->sendRequest(Instruction::INS_GENERATE_RKP_KEY_CMD, array);
+    if (testMode) {
+        return km_utils::kmError2ScopedAStatus(static_cast<keymaster_error_t>(STATUS_REMOVED));
+    }
+    auto [item, err] = card_->sendRequest(Instruction::INS_GENERATE_RKP_KEY_CMD);
     if (err != KM_ERROR_OK) {
         LOG(ERROR) << "Error in sending generateEcdsaP256KeyPair.";
         return km_utils::kmError2ScopedAStatus(translateRkpErrorCode(err));
