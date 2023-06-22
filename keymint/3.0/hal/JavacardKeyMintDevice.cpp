@@ -37,6 +37,8 @@
 #include "JavacardKeyMintOperation.h"
 #include "JavacardSharedSecret.h"
 
+#define GOOGLE_API 1
+
 namespace aidl::android::hardware::security::keymint {
 using cppbor::Bstr;
 using cppbor::EncodedItem;
@@ -420,6 +422,9 @@ ScopedAStatus JavacardKeyMintDevice::convertStorageKeyToEphemeral(
 }
 
 ScopedAStatus JavacardKeyMintDevice::getRootOfTrustChallenge(array<uint8_t, 16>* challenge) {
+    if(!GOOGLE_API)
+        return km_utils::kmError2ScopedAStatus(KM_ERROR_UNIMPLEMENTED);
+
     auto [item, err] = card_->sendRequest(Instruction::INS_GET_ROT_CHALLENGE_CMD);
     if (err != KM_ERROR_OK) {
         LOG(ERROR) << "Error in sending in getRootOfTrustChallenge.";
@@ -440,6 +445,8 @@ ScopedAStatus JavacardKeyMintDevice::getRootOfTrust(const array<uint8_t, 16>& /*
 }
 
 ScopedAStatus JavacardKeyMintDevice::sendRootOfTrust(const vector<uint8_t>& rootOfTrust) {
+    if(!GOOGLE_API)
+        return km_utils::kmError2ScopedAStatus(KM_ERROR_UNIMPLEMENTED);
     cppbor::Array request;
     request.add(EncodedItem(rootOfTrust));  // taggedItem.
     auto [item, err] = card_->sendRequest(Instruction::INS_SEND_ROT_DATA_CMD, request);
