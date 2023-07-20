@@ -38,7 +38,11 @@ keymaster_error_t JavacardSecureElement::initializeJavacard() {
     request.add(Uint(getOsVersion()));
     request.add(Uint(getOsPatchlevel()));
     request.add(Uint(getVendorPatchlevel()));
+    if(initialized)
+        return KM_ERROR_OK;
     auto [item, err] = sendRequest(Instruction::INS_INIT_STRONGBOX_CMD, request);
+    if(err == KM_ERROR_OK)
+        initialized = true;
     return err;
 }
 
