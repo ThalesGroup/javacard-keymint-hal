@@ -34,6 +34,34 @@
 namespace keymint::javacard {
 
 bool initialized = false;
+void
+dump_bytes(const char *pf, char sep, const uint8_t *p, int n)
+{
+    const uint8_t *s = p;
+    char *msg;
+    int len = 0;
+    int input_len = n;
+
+    msg = (char*) malloc ( (pf ? strlen(pf) : 0) + input_len * 3 + 1);
+    if(!msg) {
+        errno = ENOMEM;
+        return;
+    }
+
+    if (pf) {
+        len += sprintf(msg , "%s" , pf);
+    }
+    while (input_len--) {
+        len += sprintf(msg + len, "%02X" , *s++);
+        if (input_len && sep) {
+            len += sprintf(msg + len, ":");
+        }
+    }
+    sprintf(msg + len, "\n");
+    LOG(INFO) << "SecureElement:" << __func__ << " ==> size = " << n <<"data = " << msg;
+
+    if(msg) free(msg);
+}
 
 keymaster_error_t JavacardSecureElement::initializeJavacard() {
     Array request;
@@ -117,7 +145,14 @@ keymaster_error_t JavacardSecureElement::sendData(Instruction ins, std::vector<u
     if (ret != KM_ERROR_OK) {
         return ret;
     }
-
+    
+    uint8_t *cmd;
+    int cmd_len = apdu.size();
+    cmd = (uint8_t*)malloc(cmd_len * sizeof(uint8_t));
+    
+    memcpy(cmd, apdu.data(), apdu.size());
+    dump_bytes("CMD: ", ':', cmd, cmd_len);
+    
     ret = transport_->sendData(apdu, response);
     if (ret != KM_ERROR_OK) {
         LOG(ERROR) << "Error in sending data in sendData. " << static_cast<int>(ret);

@@ -19,6 +19,8 @@
 // Session timeout
 #define SESSION_TIMEOUT_20S (20000)  // 20 s
 #define SESSION_TIMEOUT_300S (300000) // 300s
+#include <aidl/android/hardware/secure_element/ISecureElement.h>
+using aidl::android::hardware::secure_element::ISecureElement;
 
 namespace keymint::javacard {
 using std::vector;
@@ -31,8 +33,10 @@ using std::vector;
 class OmapiTransport : public ITransport {
 
   public:
-    OmapiTransport() : omapiSeService(nullptr), eSEReader(nullptr), session(nullptr),
+    /*OmapiTransport() : omapiSeService(nullptr), eSEReader(nullptr), session(nullptr),
         channel(nullptr), mVSReaders({}) {
+    }*/
+    OmapiTransport() : secure_element(nullptr), channel_number(0) , channelOpenned(false){
     }
     /**
      * Gets the binder instance of ISEService, gets te reader corresponding to secure element,
@@ -55,15 +59,18 @@ class OmapiTransport : public ITransport {
     bool isConnected() override;
 
   private:
-    std::shared_ptr<aidl::android::se::omapi::ISecureElementService> omapiSeService;
+    std::shared_ptr<ISecureElement> secure_element;
+    int channel_number;
+    bool channelOpenned;
+    /*std::shared_ptr<aidl::android::se::omapi::ISecureElementService> omapiSeService;
     std::shared_ptr<aidl::android::se::omapi::ISecureElementReader> eSEReader;
     std::shared_ptr<aidl::android::se::omapi::ISecureElementSession> session;
     std::shared_ptr<aidl::android::se::omapi::ISecureElementChannel> channel;
     std::map<std::string, std::shared_ptr<aidl::android::se::omapi::ISecureElementReader>>
-        mVSReaders;
+        mVSReaders;*/
     keymaster_error_t initialize();
     bool
-    internalTransmitApdu(std::shared_ptr<aidl::android::se::omapi::ISecureElementReader> reader,
+    internalTransmitApdu(std::shared_ptr<ISecureElement> secure_element_,
                          std::vector<uint8_t> apdu, std::vector<uint8_t>& transmitResponse);
 };
 

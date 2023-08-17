@@ -14,6 +14,7 @@
  ** See the License for the specific language governing permissions and
  ** limitations under the License.
  */
+ #define LOG_TAG "OmapiTransport"
 #include "OmapiTransport.h"
 
 #include <arpa/inet.h>
@@ -28,6 +29,21 @@
 
 #define ENABLE_SESSION_TIMEOUT
 #include "SessionTimer.h"
+#include <stdlib.h>
+#include <binder/IBinder.h>
+#include <binder/IServiceManager.h>
+
+#include <aidl/android/hardware/secure_element/BnSecureElementCallback.h>
+
+
+using aidl::android::hardware::secure_element::BnSecureElementCallback;
+
+using aidl::android::hardware::secure_element::LogicalChannelResponse;
+using ndk::ScopedAStatus;
+using ndk::SharedRefBase;
+using ndk::SpAIBinder;
+
+using namespace android;
 
 #define PROP_KEYMINT_CLOSE_CHANNEL "vendor.keymint.closechannel"
 #define PROP_KEYMINT_VENDOR "persist.vendor.keymint.applet"
@@ -38,8 +54,6 @@ uint8_t SELECTABLE_AID_THALES[] = {0xA0, 0x00, 0x00, 0x00, 0x18, 0x43, 0x43, 0x4
 uint8_t SELECTABLE_AID_GOOGLE[] = {0xA0, 0x00, 0x00, 0x08, 0x44, 0x00, 0x00, 0xAA, 0x01};
 uint8_t *KEYMINT_APPLET_AID;
 uint8_t AID_SIZE;
-//constexpr uint8_t KEYMINT_APPLET_AID[] = {0xA0, 0x00, 0x00, 0x00, 0x62, 0x03,
-//                                          0x02, 0x0C, 0x01, 0x01, 0x01};
 std::string const ESE_READER_PREFIX = "eSE";
 constexpr const char omapiServiceName[] =
         "android.se.omapi.ISecureElementService/default";
@@ -50,83 +64,67 @@ class SEListener : public ::aidl::android::se::omapi::BnSecureElementListener {}
 Timer sessionTimer;
 #endif
 
+class MySecureElementCallback : public BnSecureElementCallback {
+  public:
+    ScopedAStatus onStateChange(bool state, const std::string& debugReason) override {
+        return ScopedAStatus::ok();
+    };
+};
+
+std::shared_ptr<ISecureElement> secure_element_;
+std::shared_ptr<MySecureElementCallback> secure_element_callback_;
+
+std::shared_ptr<ISecureElement> getSecureElementService() {
+    SpAIBinder binder = SpAIBinder(AServiceManager_waitForService("android.hardware.secure_element.ISecureElement/eSE1"));
+
+    secure_element_ = ISecureElement::fromBinder(binder);
+    if(secure_element_ == nullptr) return nullptr;
+    ALOGD("here1");
+
+    secure_element_callback_ = SharedRefBase::make<MySecureElementCallback>();
+    if(secure_element_callback_ == nullptr) return nullptr;
+    ALOGD("here2");
+
+    secure_element_->init(secure_element_callback_);
+    
+
+    return secure_element_;
+}
+
 keymaster_error_t OmapiTransport::initialize() {
 
-    LOG(DEBUG) << "Initialize the secure element connection";
+    LOG(INFO) << "Initialize the secure element connection";
 
     if(android::base::GetProperty(PROP_KEYMINT_VENDOR, "") != "Google") {
-        LOG(DEBUG) << "Initialize the AID to be Thales";
+        LOG(INFO) << "Initialize the AID to be Thales";
         KEYMINT_APPLET_AID = SELECTABLE_AID_THALES;
         AID_SIZE = 13;
     } else {
-        LOG(DEBUG) << "Initialize the AID to be Google";
+        LOG(INFO) << "Initialize the AID to be Google";
         KEYMINT_APPLET_AID = SELECTABLE_AID_GOOGLE;
         AID_SIZE = 9;
     }
+    
+    LOG(INFO) << "We're the client";
 
-    // Get OMAPI vendor stable service handler
-    ::ndk::SpAIBinder ks2Binder(AServiceManager_checkService(omapiServiceName));
-    omapiSeService = aidl::android::se::omapi::ISecureElementService::fromBinder(ks2Binder);
-
-    if (omapiSeService == nullptr) {
-        LOG(ERROR) << "Failed to start omapiSeService null";
+    secure_element = getSecureElementService();
+    if (secure_element == nullptr) {
+        LOG(ERROR) << "Failed to start SEHAL service null";
         return static_cast<keymaster_error_t>(KM_ERROR_HARDWARE_NOT_YET_AVAILABLE);
     }
 
+
     int size = AID_SIZE;
-    // reset readers, clear readers if already existing
-    if (mVSReaders.size() > 0) {
-        closeConnection();
-    }
-
-    std::vector<std::string> readers = {};
-    // Get available readers
-    auto status = omapiSeService->getReaders(&readers);
-    if (!status.isOk()) {
-        LOG(ERROR) << "getReaders failed to get available readers: " << status.getMessage();
-        return static_cast<keymaster_error_t>(KM_ERROR_HARDWARE_TYPE_UNAVAILABLE);
-    }
-
-    // Get SE readers handlers
-    for (auto readerName : readers) {
-        std::shared_ptr<::aidl::android::se::omapi::ISecureElementReader> reader;
-        status = omapiSeService->getReader(readerName, &reader);
-        if (!status.isOk()) {
-            LOG(ERROR) << "getReader for " << readerName.c_str()
-                       << " Failed: " << status.getMessage();
-            return static_cast<keymaster_error_t>(KM_ERROR_HARDWARE_TYPE_UNAVAILABLE);
-        }
-        mVSReaders[readerName] = reader;
-    }
-
-    // Find eSE reader, as of now assumption is only eSE available on device
-    LOG(DEBUG) << "Finding eSE reader";
-    eSEReader = nullptr;
-    if (mVSReaders.size() > 0) {
-        for (const auto& [name, reader] : mVSReaders) {
-            if (name.find(ESE_READER_PREFIX, 0) != std::string::npos) {
-                LOG(DEBUG) << "eSE reader found: " << name;
-                eSEReader = reader;
-                break;
-            }
-        }
-    }
-
-    if (eSEReader == nullptr) {
-        LOG(ERROR) << "secure element reader " << ESE_READER_PREFIX << " not found";
-        return static_cast<keymaster_error_t>(KM_ERROR_HARDWARE_TYPE_UNAVAILABLE);
-    }
 
     bool isSecureElementPresent = false;
-    auto res = eSEReader->isSecureElementPresent(&isSecureElementPresent);
+    auto res = secure_element->isCardPresent(&isSecureElementPresent);
+
     if (!res.isOk()) {
-        eSEReader = nullptr;
         LOG(ERROR) << "isSecureElementPresent error: " << res.getMessage();
         return static_cast<keymaster_error_t>(KM_ERROR_HARDWARE_TYPE_UNAVAILABLE);
     }
     if (!isSecureElementPresent) {
         LOG(ERROR) << "secure element not found";
-        eSEReader = nullptr;
         return static_cast<keymaster_error_t>(KM_ERROR_HARDWARE_TYPE_UNAVAILABLE);
     }
 
@@ -134,8 +132,11 @@ keymaster_error_t OmapiTransport::initialize() {
 }
 
 bool OmapiTransport::internalTransmitApdu(
-    std::shared_ptr<aidl::android::se::omapi::ISecureElementReader> reader,
+    std::shared_ptr<ISecureElement> secure_element_,
     std::vector<uint8_t> apdu, std::vector<uint8_t>& transmitResponse) {
+    
+    std::vector<uint8_t> cmd = apdu;
+    LogicalChannelResponse logical_channel_response;
 
     LOG(DEBUG) << "internalTransmitApdu: trasmitting data to secure element";
 
@@ -145,72 +146,47 @@ bool OmapiTransport::internalTransmitApdu(
     sessionTimer.stop();
 #endif
 
-    if (reader == nullptr) {
-        LOG(ERROR) << "eSE reader is null";
+    if (secure_element_ == nullptr) {
+        LOG(ERROR) << "eSE is null";
         return false;
     }
 
-    bool result = true;
+    
     auto res = ndk::ScopedAStatus::ok();
-    if(session != nullptr) {
-        res = session->isClosed(&result);
-        if (!res.isOk()) {
-            LOG(ERROR) << "isClosed error: " << res.getMessage();
-            return KM_ERROR_SECURE_HW_COMMUNICATION_FAILED;
-        }
-    }
-    if(result) {
-        res = reader->openSession(&session);
-        if (!res.isOk()) {
-            LOG(ERROR) << "openSession error: " << res.getMessage();
-            return false;
-        }
-        if (session == nullptr) {
-            LOG(ERROR) << "Could not open session null";
-            return false;
-        }
-    }
-
-    result = true;
-    if(channel != nullptr) {
-        res = channel->isClosed(&result);
-        if (!res.isOk()) {
-            LOG(ERROR) << "isClosed error: " << res.getMessage();
-            return KM_ERROR_SECURE_HW_COMMUNICATION_FAILED;
-        }
-    }
 
     int size = AID_SIZE;
     std::vector<uint8_t> aid(KEYMINT_APPLET_AID, KEYMINT_APPLET_AID + size);
-    if (result) {
-        auto mSEListener = ndk::SharedRefBase::make<SEListener>();
-        res = session->openLogicalChannel(aid, 0x00, mSEListener, &channel);
+    if (!channelOpenned) {
+        
+        res = secure_element_->openLogicalChannel(aid, 0x00, &logical_channel_response);
         if (!res.isOk()) {
             LOG(ERROR) << "openLogicalChannel error: " << res.getMessage();
             return false;
         }
-        if (channel == nullptr) {
+        if (logical_channel_response.channelNumber == 0) {
             LOG(ERROR) << "Could not open channel null";
+            return false;
+        }
+        channel_number = logical_channel_response.channelNumber;
+        channelOpenned = true;
+        
+        if (logical_channel_response.selectResponse.empty()) {
+            LOG(ERROR) << "logical_channel_response.selectResponse == nullptr ";
+            return false;
+        }
+
+        if ((logical_channel_response.selectResponse.size() < 2)
+            || ((logical_channel_response.selectResponse[logical_channel_response.selectResponse.size() -1] & 0xFF) != 0x00)
+            || ((logical_channel_response.selectResponse[logical_channel_response.selectResponse.size() -2] & 0xFF) != 0x90))
+        {
+            LOG(ERROR) << "Failed to select the Applet.";
             return false;
         }
     }
 
-    std::vector<uint8_t> selectResponse = {};
-    res = channel->getSelectResponse(&selectResponse);
-    if (!res.isOk()) {
-        LOG(ERROR) << "getSelectResponse error: " << res.getMessage();
-        return false;
-    }
+    cmd[0] |= channel_number;
 
-    if ((selectResponse.size() < 2)
-        || ((selectResponse[selectResponse.size() -1] & 0xFF) != 0x00)
-        || ((selectResponse[selectResponse.size() -2] & 0xFF) != 0x90))
-    {
-        LOG(ERROR) << "Failed to select the Applet.";
-        return false;
-    }
-
-    res = channel->transmit(apdu, &transmitResponse);
+    res = secure_element_->transmit(cmd, &transmitResponse);
 
     LOG(INFO) << "STATUS OF TRNSMIT: " << res.getExceptionCode()
               << " Message: " << res.getMessage();
@@ -247,6 +223,7 @@ keymaster_error_t OmapiTransport::openConnection() {
 
 keymaster_error_t OmapiTransport::sendData(const vector<uint8_t>& inData, vector<uint8_t>& output) {
 
+    std::vector<uint8_t> cmd = inData;
     if (!isConnected()) {
         // Try to initialize connection to eSE
         LOG(INFO) << "Failed to send data, try to initialize connection SE connection";
@@ -258,9 +235,9 @@ keymaster_error_t OmapiTransport::sendData(const vector<uint8_t>& inData, vector
         }
     }
 
-    if (eSEReader != nullptr) {
-        LOG(DEBUG) << "Sending apdu data to secure element: " << ESE_READER_PREFIX;
-        if(internalTransmitApdu(eSEReader, inData, output)) {
+    if (secure_element != nullptr) {
+        LOG(INFO) << "Sending apdu data to secure element: " << ESE_READER_PREFIX;
+        if(internalTransmitApdu(secure_element, cmd, output)) {
             if(android::base::GetBoolProperty(PROP_KEYMINT_CLOSE_CHANNEL, false))
                 closeConnection();
             return KM_ERROR_OK;
@@ -275,30 +252,24 @@ keymaster_error_t OmapiTransport::sendData(const vector<uint8_t>& inData, vector
 }
 
 keymaster_error_t OmapiTransport::closeConnection() {
-    LOG(DEBUG) << "Closing all connections";
-    if (channel != nullptr) channel->close();
-    if (session != nullptr) session->close();
-    if (omapiSeService != nullptr) {
-        if (mVSReaders.size() > 0) {
-            for (const auto& [name, reader] : mVSReaders) {
-                reader->closeSessions();
-            }
-            mVSReaders.clear();
-        }
+    LOG(INFO) << "Closing all connections";
+    if (channel_number != 0) {
+        secure_element->closeChannel(channel_number);
+        channel_number = 0;
+        channelOpenned = false;
     }
-    omapiSeService = nullptr;
-    eSEReader = nullptr;
+    if (secure_element != nullptr) secure_element = nullptr;
     return KM_ERROR_OK;
 }
 
 bool OmapiTransport::isConnected() {
     // Check already initialization completed or not
-    if (omapiSeService != nullptr && eSEReader != nullptr) {
-        LOG(DEBUG) << "Connection initialization already completed";
+    if (secure_element != nullptr) {
+        LOG(INFO) << "Connection initialization already completed";
         return true;
     }
 
-    LOG(DEBUG) << "Connection initialization not completed";
+    LOG(INFO) << "Connection initialization not completed";
     return false;
 }
 
