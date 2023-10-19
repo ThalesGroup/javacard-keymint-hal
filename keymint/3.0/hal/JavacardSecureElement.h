@@ -76,6 +76,8 @@ enum class Instruction {
     INS_SEND_ROT_DATA_CMD = KEYMINT_CMD_APDU_START + 47,
 };
 
+extern bool initialized;
+
 class JavacardSecureElement {
   public:
     explicit JavacardSecureElement(shared_ptr<ITransport> transport)
@@ -113,6 +115,5 @@ class JavacardSecureElement {
     bool isEarlyBootEndedPending;
     bool isDeleteAllKeysPending;
     CborConverter cbor_;
-    bool initialized;
 };
 }  // namespace keymint::javacard

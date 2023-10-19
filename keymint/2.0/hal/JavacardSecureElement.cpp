@@ -35,6 +35,8 @@
 
 namespace keymint::javacard {
 
+bool initialized = false;
+
 using namespace ::keymaster;
 keymaster_error_t JavacardSecureElement::initializeJavacard() {
     Array request;

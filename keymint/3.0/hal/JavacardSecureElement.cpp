@@ -33,6 +33,8 @@
 
 namespace keymint::javacard {
 
+bool initialized = false;
+
 keymaster_error_t JavacardSecureElement::initializeJavacard() {
     Array request;
     request.add(Uint(getOsVersion()));
