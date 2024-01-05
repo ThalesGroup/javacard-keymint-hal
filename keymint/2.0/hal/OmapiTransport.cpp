@@ -14,6 +14,8 @@
  ** See the License for the specific language governing permissions and
  ** limitations under the License.
  */
+#include "OmapiTransport.h"
+
 #include <arpa/inet.h>
 #include <stdio.h>
 #include <string.h>
@@ -22,8 +24,10 @@
 #include <vector>
 
 #include <android-base/logging.h>
+#include <android-base/properties.h>
 
-#include "OmapiTransport.h"
+#include "SessionTimer.h"
+
 
 namespace keymint::javacard {
 
@@ -34,6 +38,7 @@ constexpr const char omapiServiceName[] =
 
 class SEListener : public ::aidl::android::se::omapi::BnSecureElementListener {};
 
+Timer sessionTimer;
 
 keymaster_error_t OmapiTransport::initialize() {
 
@@ -105,28 +110,6 @@ keymaster_error_t OmapiTransport::initialize() {
         return static_cast<keymaster_error_t>(KM_ERROR_HARDWARE_TYPE_UNAVAILABLE);
     }
 
-    status = eSEReader->openSession(&session);
-    if (!status.isOk()) {
-        LOG(ERROR) << "openSession error: " << status.getMessage();
-        return KM_ERROR_SECURE_HW_COMMUNICATION_FAILED;
-    }
-    if (session == nullptr) {
-        LOG(ERROR) << "Could not open session null";
-        return KM_ERROR_SECURE_HW_COMMUNICATION_FAILED;
-    }
-
-    std::vector<uint8_t> aid(SELECTABLE_AID, SELECTABLE_AID + size);
-    auto mSEListener = ndk::SharedRefBase::make<SEListener>();
-    status = session->openLogicalChannel(aid, 0x00, mSEListener, &channel);
-    if (!status.isOk()) {
-        LOG(ERROR) << "openLogicalChannel error: " << status.getMessage();
-        return KM_ERROR_SECURE_HW_COMMUNICATION_FAILED;
-    }
-    if (channel == nullptr) {
-        LOG(ERROR) << "Could not open channel null";
-        return KM_ERROR_SECURE_HW_COMMUNICATION_FAILED;
-    }  
-    
     return KM_ERROR_OK;
 }
 
@@ -135,6 +118,11 @@ bool OmapiTransport::internalTransmitApdu(
     std::vector<uint8_t> apdu, std::vector<uint8_t>& transmitResponse) {
 
     LOG(DEBUG) << "internalTransmitApdu: trasmitting data to secure element";
+
+    // Stop the timer
+    LOG(DEBUG) << "Stop timeout if any.";
+    sessionTimer.stop();
+
     if (reader == nullptr) {
         LOG(ERROR) << "eSE reader is null";
         return false;
@@ -172,7 +160,7 @@ bool OmapiTransport::internalTransmitApdu(
 
     int size = sizeof(SELECTABLE_AID) / sizeof(SELECTABLE_AID[0]);
     std::vector<uint8_t> aid(SELECTABLE_AID, SELECTABLE_AID + size);
-    if(result) {
+    if (result) {
         auto mSEListener = ndk::SharedRefBase::make<SEListener>();
         res = session->openLogicalChannel(aid, 0x00, mSEListener, &channel);
         if (!res.isOk()) {
@@ -207,6 +195,9 @@ bool OmapiTransport::internalTransmitApdu(
         return false;
     }
 
+    LOG(DEBUG) << "Start timeout before closing channels ";
+    sessionTimer.start(SESSION_TIMEOUT, this);
+
     return true;
 }
 
@@ -237,6 +228,7 @@ keymaster_error_t OmapiTransport::sendData(const vector<uint8_t>& inData, vector
         if(internalTransmitApdu(eSEReader, inData, output)) {
             return KM_ERROR_OK;
         } else {
+            closeConnection();
             return KM_ERROR_SECURE_HW_COMMUNICATION_FAILED;
         }
     } else {
@@ -257,6 +249,8 @@ keymaster_error_t OmapiTransport::closeConnection() {
             mVSReaders.clear();
         }
     }
+    omapiSeService = nullptr;
+    eSEReader = nullptr;
     return KM_ERROR_OK;
 }
 
