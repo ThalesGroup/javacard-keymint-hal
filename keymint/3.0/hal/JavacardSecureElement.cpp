@@ -126,9 +126,11 @@ keymaster_error_t JavacardSecureElement::sendData(Instruction ins, std::vector<u
 
     // Response size should be greater than 2. Cbor output data followed by two bytes of APDU
     // status.
-    if ((response.size() <= 2) || (getApduStatus(response) != APDU_RESP_STATUS_OK)) {
-        LOG(ERROR) << "Response of the sendData is wrong: response size = " << response.size()
-                   << " apdu status = " << getApduStatus(response);
+    if (response.size() <= 2){
+        LOG(ERROR) << "Response of the sendData is wrong: response size = " << response.size();
+        return (KM_ERROR_UNKNOWN_ERROR);
+    } else if (getApduStatus(response) != APDU_RESP_STATUS_OK) {
+        LOG(ERROR) << "Response of the sendData is wrong: response size = apdu status = " << getApduStatus(response);
         return (KM_ERROR_UNKNOWN_ERROR);
     }
     // remove the status bytes
