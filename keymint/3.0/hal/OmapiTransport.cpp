@@ -26,6 +26,7 @@
 #include <android-base/logging.h>
 #include <android-base/properties.h>
 
+#define ENABLE_SESSION_TIMEOUT
 #include "SessionTimer.h"
 
 #define PROP_KEYMINT_CLOSE_CHANNEL "vendor.keymint.closechannel"
@@ -45,7 +46,9 @@ constexpr const char omapiServiceName[] =
 
 class SEListener : public ::aidl::android::se::omapi::BnSecureElementListener {};
 
+#ifdef ENABLE_SESSION_TIMEOUT
 Timer sessionTimer;
+#endif
 
 keymaster_error_t OmapiTransport::initialize() {
 
@@ -136,9 +139,11 @@ bool OmapiTransport::internalTransmitApdu(
 
     LOG(DEBUG) << "internalTransmitApdu: trasmitting data to secure element";
 
+#ifdef ENBALE_SESSION_TIMEOUT
     // Stop the timer
     LOG(DEBUG) << "Stop timeout if any.";
     sessionTimer.stop();
+#endif
 
     if (reader == nullptr) {
         LOG(ERROR) << "eSE reader is null";
@@ -214,8 +219,14 @@ bool OmapiTransport::internalTransmitApdu(
         return false;
     }
 
+#ifdef ENABLE_SESSION_TIMEOUT
     LOG(DEBUG) << "Start timeout before closing channels ";
-    sessionTimer.start(SESSION_TIMEOUT, this);
+    if ( apdu.size() > 2 && (apdu.at(1) == 0x30 || apdu.at(1) == 0x32)) {
+        sessionTimer.start(SESSION_TIMEOUT_300S, this);
+    } else {
+        sessionTimer.start(SESSION_TIMEOUT_20S, this);
+    }
+#endif
 
     return true;
 }
