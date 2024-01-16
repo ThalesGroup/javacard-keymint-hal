@@ -202,7 +202,12 @@ bool OmapiTransport::internalTransmitApdu(
 
 #ifdef ENABLE_SESSION_TIMEOUT
     LOG(DEBUG) << "Start timeout before closing channels ";
-    if ( apdu.size() > 2 && (apdu.at(1) == 0x30 || apdu.at(1) == 0x32)) {
+    if ( apdu.size() > 2 && apdu.at(1) == 0x30 ) {
+        sessionTimer.count++;
+    } else if ( apdu.size() > 2 && apdu.at(1) == 0x32 ) {
+        sessionTimer.count--;
+    }
+    if ( sessionTimer.count > 0 ) {
         sessionTimer.start(SESSION_TIMEOUT_300S, this);
     } else {
         sessionTimer.start(SESSION_TIMEOUT_20S, this);
