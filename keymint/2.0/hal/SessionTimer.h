@@ -7,6 +7,7 @@
 
 class Timer {
 public:
+    int count = 0;
     Timer() : is_running(false) {}
 
     ~Timer() {
