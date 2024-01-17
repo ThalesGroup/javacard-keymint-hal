@@ -47,6 +47,8 @@ keymaster_error_t OmapiTransport::initialize() {
 
     LOG(DEBUG) << "Initialize the secure element connection";
 
+	sessionTimer.count = 0;
+
     // Get OMAPI vendor stable service handler
     ::ndk::SpAIBinder ks2Binder(AServiceManager_checkService(omapiServiceName));
     omapiSeService = aidl::android::se::omapi::ISecureElementService::fromBinder(ks2Binder);
