@@ -54,6 +54,8 @@ keymaster_error_t OmapiTransport::initialize() {
 
     LOG(DEBUG) << "Initialize the secure element connection";
 
+	sessionTimer.count = 0;
+
     if(android::base::GetProperty(PROP_KEYMINT_VENDOR, "") != "Google") {
         LOG(DEBUG) << "Initialize the AID to be Thales";
         KEYMINT_APPLET_AID = SELECTABLE_AID_THALES;
