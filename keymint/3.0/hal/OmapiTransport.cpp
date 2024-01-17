@@ -223,7 +223,7 @@ bool OmapiTransport::internalTransmitApdu(
     LOG(DEBUG) << "Start timeout before closing channels ";
     if ( apdu.size() > 2 && apdu.at(1) == 0x30 ) {
         sessionTimer.count++;
-    } else if ( apdu.size() > 2 && apdu.at(1) == 0x32 ) {
+    } else if ( apdu.size() > 2 && ( apdu.at(1) == 0x32 || apdu.at(1) == 0x33) ) {
         sessionTimer.count--;
     }
     if ( sessionTimer.count > 0 ) {
