@@ -124,7 +124,7 @@ bool OmapiTransport::internalTransmitApdu(
 
     LOG(DEBUG) << "internalTransmitApdu: trasmitting data to secure element";
 
-#ifdef ENBALE_SESSION_TIMEOUT
+#ifdef ENABLE_SESSION_TIMEOUT
     // Stop the timer
     LOG(DEBUG) << "Stop timeout if any.";
     sessionTimer.stop();
