@@ -48,6 +48,10 @@ keymaster_error_t JavacardSecureElement::initializeJavacard() {
     auto [item, err] = sendRequest(Instruction::INS_INIT_STRONGBOX_CMD, request);
     if(err == KM_ERROR_OK)
         initialized = true;
+    if(err == -10001) {
+        initialized = true;
+        return KM_ERROR_OK;
+    }
     return err;
 }
 
