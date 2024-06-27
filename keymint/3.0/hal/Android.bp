@@ -42,7 +42,6 @@ cc_library {
         "CborConverter.cpp",
         "JavacardKeyMintDevice.cpp",
         "JavacardKeyMintOperation.cpp",
-        "JavacardRemotelyProvisionedComponentDevice.cpp",
         "JavacardSecureElement.cpp",
         "JavacardSharedSecret.cpp",
         "keymint_utils.cpp",
@@ -92,7 +91,6 @@ cc_library {
         "libbase",
         "liblog",
         "libbinder_ndk",
-        "android.se.omapi-V1-ndk",
         "libhardware",
         "libcutils",
         "android.hardware.secure_element-V1-ndk",
@@ -129,7 +127,6 @@ cc_binary {
         "libjc_keymint_transport-thales",
         "liblog",
         "libutils",
-        "android.se.omapi-V1-ndk",
         "android.hardware.secure_element-V1-ndk",
     ],
     srcs: [

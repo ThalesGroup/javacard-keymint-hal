@@ -24,7 +24,6 @@
 #include <android/binder_process.h>
 
 #include "JavacardKeyMintDevice.h"
-#include "JavacardRemotelyProvisionedComponentDevice.h"
 #include "JavacardSecureElement.h"
 #include "JavacardSharedSecret.h"
 #include "OmapiTransport.h"
@@ -32,7 +31,6 @@
 #include "keymint_utils.h"
 
 using aidl::android::hardware::security::keymint::JavacardKeyMintDevice;
-using aidl::android::hardware::security::keymint::JavacardRemotelyProvisionedComponentDevice;
 using aidl::android::hardware::security::keymint::SecurityLevel;
 using aidl::android::hardware::security::sharedsecret::JavacardSharedSecret;
 using keymint::javacard::getOsPatchlevel;
@@ -87,8 +85,6 @@ int main() {
     addService<JavacardKeyMintDevice>(card);
     // Add Shared Secret Service
     addService<JavacardSharedSecret>(card);
-    // Add Remotely Provisioned Component Service
-    addService<JavacardRemotelyProvisionedComponentDevice>(card);
 
     ABinderProcess_joinThreadPool();
     return EXIT_FAILURE;  // should not reach
