@@ -58,8 +58,6 @@ std::string const ESE_READER_PREFIX = "eSE";
 constexpr const char omapiServiceName[] =
         "android.se.omapi.ISecureElementService/default";
 
-class SEListener : public ::aidl::android::se::omapi::BnSecureElementListener {};
-
 #ifdef ENABLE_SESSION_TIMEOUT
 Timer sessionTimer;
 #endif
