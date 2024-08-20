@@ -290,6 +290,8 @@ keymaster_error_t OmapiTransport::closeConnection() {
     }
     omapiSeService = nullptr;
     eSEReader = nullptr;
+    session = nullptr;
+    channel = nullptr;
     return KM_ERROR_OK;
 }
 
