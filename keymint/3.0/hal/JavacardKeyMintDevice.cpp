@@ -39,6 +39,7 @@
 
 #define GOOGLE_API 1
 
+
 namespace aidl::android::hardware::security::keymint {
 using cppbor::Bstr;
 using cppbor::EncodedItem;
@@ -49,6 +50,13 @@ using ::keymaster::KeymasterBlob;
 using ::keymaster::KeymasterKeyBlob;
 using ::keymint::javacard::Instruction;
 using std::string;
+
+constexpr uint32_t TAG_SEQUENCE = 0x30;
+constexpr uint32_t LENGTH_MASK = 0x80;
+constexpr uint32_t LENGTH_VALUE_MASK = 0x7F;
+
+keymaster_error_t
+getCertificateChain(std::vector<uint8_t>& chainBuffer, std::vector<Certificate>& certChain);
 
 ScopedAStatus JavacardKeyMintDevice::defaultHwInfo(KeyMintHardwareInfo* info) {
     info->versionNumber = 2;
@@ -108,6 +116,14 @@ ScopedAStatus JavacardKeyMintDevice::generateKey(const vector<KeyParameter>& key
     creationResult->keyCharacteristics = std::move(optKeyChars.value());
     creationResult->certificateChain = std::move(optCertChain.value());
     creationResult->keyBlob = std::move(optKeyBlob.value());
+    if (isFactoryAttestationCertMode(keyParams, attestationKey)) {
+        // Get provisioned attestation certificate chain.
+        err = getProvisionedAttestationCertChain(creationResult->certificateChain);
+        if (err != KM_ERROR_OK) {
+            LOG(ERROR) << "Error in getting Provisioned attestation certificate chain.";
+            return km_utils::kmError2ScopedAStatus(err);
+        }
+    }
     return ScopedAStatus::ok();
 }
 
@@ -154,6 +170,14 @@ ScopedAStatus JavacardKeyMintDevice::importKey(const vector<KeyParameter>& keyPa
     creationResult->keyCharacteristics = std::move(optKeyChars.value());
     creationResult->certificateChain = std::move(optCertChain.value());
     creationResult->keyBlob = std::move(optKeyBlob.value());
+    if (isFactoryAttestationCertMode(keyParams, attestationKey)) {
+        // Get provisioned attestation certificate chain.
+        err = getProvisionedAttestationCertChain(creationResult->certificateChain);
+        if (err != KM_ERROR_OK) {
+            LOG(ERROR) << "Error in getting Provisioned attestation certificate chain.";
+            return km_utils::kmError2ScopedAStatus(err);
+        }
+    }
     return ScopedAStatus::ok();
 }
 
@@ -456,6 +480,92 @@ ScopedAStatus JavacardKeyMintDevice::sendRootOfTrust(const vector<uint8_t>& root
     }
     LOG(INFO) << "JavacardKeyMintDevice::sendRootOfTrust success";
     return ScopedAStatus::ok();
+}
+
+keymaster_error_t
+JavacardKeyMintDevice::getProvisionedAttestationCertChain(std::vector<Certificate>& certChain) {
+    auto [item, err] = card_->sendRequest(Instruction::INS_GET_CERT_CHAIN_CMD);
+    if (err != KM_ERROR_OK) {
+        LOG(ERROR) << "Error in getProvisionedAttestationCertChain.";
+        return err;
+    }
+    auto optChain = cbor_.getByteArrayVec(item, 1);
+    if (!optChain) {
+        LOG(ERROR) << "Error in getProvisionedAttestationCertChain() while getting cert chain from parsed cbor item.";
+        return KM_ERROR_UNKNOWN_ERROR;
+    }
+    err = getCertificateChain(*optChain, certChain);
+    if (err != KM_ERROR_OK) {
+        LOG(ERROR) << "Error in getCertificateChain.";
+        return err;
+    }
+    return KM_ERROR_OK;
+}
+
+bool
+JavacardKeyMintDevice::isFactoryAttestationCertMode(const vector<KeyParameter>& keyParams, const optional<AttestationKey>& attestationKey) {
+    AuthorizationSet authSet((km_utils::KmParamSet(keyParams)));
+    keymaster_algorithm_t algorithm;
+    authSet.GetTagValue(keymaster::TAG_ALGORITHM, &algorithm);
+    if (algorithm == KM_ALGORITHM_RSA || algorithm == KM_ALGORITHM_EC) {
+        if (!attestationKey || attestationKey->keyBlob.empty()) {
+            if (authSet.Contains(keymaster::TAG_ATTESTATION_CHALLENGE)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+keymaster_error_t
+getCertificateChain(std::vector<uint8_t>& chainBuffer, std::vector<Certificate>& certChain) {
+    uint8_t *data = chainBuffer.data();
+    int index = 0;
+    uint32_t length = 0;
+    while (index < chainBuffer.size()) {
+        std::vector<uint8_t> temp;
+        if(data[index] == TAG_SEQUENCE) {
+            // Short form. One octet. Bit 8 has value "0" and bits 7-1 give the length.
+            if (0 == (data[index+1] & LENGTH_MASK)) {
+                length = (uint32_t)data[index];
+                //Add SEQ and Length fields
+                length += 2;
+            } else {
+                // Long form. Two to 127 octets. Bit 8 of first octet has value "1" and
+                // bits 7-1 give the number of additional length octets. Second and following
+                // octets give the actual length.
+                int additionalBytes = data[index+1] & LENGTH_VALUE_MASK;
+                if (additionalBytes == 0x01) {
+                    length = data[index+2];
+                    //Add SEQ and Length fields
+                    length += 3;
+                } else if (additionalBytes == 0x02) {
+                    length = (data[index+2] << 8 | data[index+3]);
+                    //Add SEQ and Length fields
+                    length += 4;
+                } else if (additionalBytes == 0x04) {
+                    length = data[index+2] << 24;
+                    length |= data[index+3] << 16;
+                    length |= data[index+4] << 8;
+                    length |= data[index+5];
+                    //Add SEQ and Length fields
+                    length += 6;
+                } else {
+                    //Length is larger than uint32_t max limit.
+                    return KM_ERROR_UNKNOWN_ERROR;
+                }
+            }
+            temp.insert(temp.end(), (data+index), (data+index+length));
+            index += length;
+            Certificate certificate;
+            certificate.encodedCertificate = std::move(temp);
+            certChain.push_back(std::move(certificate));
+        } else {
+            //SEQUENCE TAG MISSING.
+            return KM_ERROR_UNKNOWN_ERROR;
+        }
+    }
+    return KM_ERROR_OK;
 }
 
 }  // namespace aidl::android::hardware::security::keymint
