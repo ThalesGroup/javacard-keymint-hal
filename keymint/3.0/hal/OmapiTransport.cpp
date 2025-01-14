@@ -22,6 +22,8 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include <vector>
+#include <iomanip>
+#include <future>
 
 #include <android-base/logging.h>
 #include <android-base/properties.h>
@@ -139,103 +141,108 @@ bool OmapiTransport::internalTransmitApdu(
     std::shared_ptr<aidl::android::se::omapi::ISecureElementReader> reader,
     std::vector<uint8_t> apdu, std::vector<uint8_t>& transmitResponse) {
 
-    LOG(DEBUG) << "internalTransmitApdu: trasmitting data to secure element";
+    std::future<bool> result = std::async(std::launch::async, [this, reader, apdu, &transmitResponse]() {
+        std::lock_guard<std::mutex> lock(connectionMutex);
+
+        LOG(DEBUG) << "internalTransmitApdu: trasmitting data to secure element";
 
 #ifdef ENABLE_SESSION_TIMEOUT
-    // Stop the timer
-    LOG(DEBUG) << "Stop timeout if any.";
-    sessionTimer.stop();
+        // Stop the timer
+        LOG(DEBUG) << "Stop timeout if any.";
+        sessionTimer.stop();
 #endif
 
-    if (reader == nullptr) {
-        LOG(ERROR) << "eSE reader is null";
-        return false;
-    }
-
-    bool result = true;
-    auto res = ndk::ScopedAStatus::ok();
-    if(session != nullptr) {
-        res = session->isClosed(&result);
-        if (!res.isOk()) {
-            LOG(ERROR) << "isClosed error: " << res.getMessage();
-            return KM_ERROR_SECURE_HW_COMMUNICATION_FAILED;
-        }
-    }
-    if(result) {
-        res = reader->openSession(&session);
-        if (!res.isOk()) {
-            LOG(ERROR) << "openSession error: " << res.getMessage();
+        if (reader == nullptr) {
+            LOG(ERROR) << "eSE reader is null";
             return false;
         }
-        if (session == nullptr) {
-            LOG(ERROR) << "Could not open session null";
-            return false;
-        }
-    }
 
-    result = true;
-    if(channel != nullptr) {
-        res = channel->isClosed(&result);
+        bool result = true;
+        auto res = ndk::ScopedAStatus::ok();
+        if(session != nullptr) {
+            res = session->isClosed(&result);
+            if (!res.isOk()) {
+                LOG(ERROR) << "isClosed error: " << res.getMessage();
+                return false;
+            }
+        }
+        if(result) {
+            res = reader->openSession(&session);
+            if (!res.isOk()) {
+                LOG(ERROR) << "openSession error: " << res.getMessage();
+                return false;
+            }
+            if (session == nullptr) {
+                LOG(ERROR) << "Could not open session null";
+                return false;
+            }
+        }
+
+        result = true;
+        if(channel != nullptr) {
+            res = channel->isClosed(&result);
+            if (!res.isOk()) {
+                LOG(ERROR) << "isClosed error: " << res.getMessage();
+                return false;
+            }
+        }
+
+        int size = AID_SIZE;
+        std::vector<uint8_t> aid(KEYMINT_APPLET_AID, KEYMINT_APPLET_AID + size);
+        if (result) {
+            auto mSEListener = ndk::SharedRefBase::make<SEListener>();
+            res = session->openLogicalChannel(aid, 0x00, mSEListener, &channel);
+            if (!res.isOk()) {
+                LOG(ERROR) << "openLogicalChannel error: " << res.getMessage();
+                return false;
+            }
+            if (channel == nullptr) {
+                LOG(ERROR) << "Could not open channel null";
+                return false;
+            }
+        }
+
+        std::vector<uint8_t> selectResponse = {};
+        res = channel->getSelectResponse(&selectResponse);
         if (!res.isOk()) {
-            LOG(ERROR) << "isClosed error: " << res.getMessage();
-            return KM_ERROR_SECURE_HW_COMMUNICATION_FAILED;
+            LOG(ERROR) << "getSelectResponse error: " << res.getMessage();
+            return false;
         }
-    }
 
-    int size = AID_SIZE;
-    std::vector<uint8_t> aid(KEYMINT_APPLET_AID, KEYMINT_APPLET_AID + size);
-    if (result) {
-        auto mSEListener = ndk::SharedRefBase::make<SEListener>();
-        res = session->openLogicalChannel(aid, 0x00, mSEListener, &channel);
+        if ((selectResponse.size() < 2)
+            || ((selectResponse[selectResponse.size() -1] & 0xFF) != 0x00)
+            || ((selectResponse[selectResponse.size() -2] & 0xFF) != 0x90))
+        {
+            LOG(ERROR) << "Failed to select the Applet.";
+            return false;
+        }
+
+        res = channel->transmit(apdu, &transmitResponse);
+
+        LOG(INFO) << "STATUS OF TRNSMIT: " << res.getExceptionCode()
+                  << " Message: " << res.getMessage();
         if (!res.isOk()) {
-            LOG(ERROR) << "openLogicalChannel error: " << res.getMessage();
+            LOG(ERROR) << "transmit error: " << res.getMessage();
             return false;
         }
-        if (channel == nullptr) {
-            LOG(ERROR) << "Could not open channel null";
-            return false;
-        }
-    }
-
-    std::vector<uint8_t> selectResponse = {};
-    res = channel->getSelectResponse(&selectResponse);
-    if (!res.isOk()) {
-        LOG(ERROR) << "getSelectResponse error: " << res.getMessage();
-        return false;
-    }
-
-    if ((selectResponse.size() < 2)
-        || ((selectResponse[selectResponse.size() -1] & 0xFF) != 0x00)
-        || ((selectResponse[selectResponse.size() -2] & 0xFF) != 0x90))
-    {
-        LOG(ERROR) << "Failed to select the Applet.";
-        return false;
-    }
-
-    res = channel->transmit(apdu, &transmitResponse);
-
-    LOG(INFO) << "STATUS OF TRNSMIT: " << res.getExceptionCode()
-              << " Message: " << res.getMessage();
-    if (!res.isOk()) {
-        LOG(ERROR) << "transmit error: " << res.getMessage();
-        return false;
-    }
 
 #ifdef ENABLE_SESSION_TIMEOUT
-    LOG(DEBUG) << "Start timeout before closing channels ";
-    if ( apdu.size() > 2 && apdu.at(1) == 0x30 ) {
-        sessionTimer.count++;
-    } else if ( apdu.size() > 2 && ( apdu.at(1) == 0x32 || apdu.at(1) == 0x33) ) {
-        sessionTimer.count--;
-    }
-    if ( sessionTimer.count > 0 ) {
-        sessionTimer.start(SESSION_TIMEOUT_300S, this);
-    } else {
-        sessionTimer.start(SESSION_TIMEOUT_20S, this);
-    }
+        LOG(DEBUG) << "Start timeout before closing channels ";
+        if ( apdu.size() > 2 && apdu.at(1) == 0x30 ) {
+            sessionTimer.count++;
+        } else if ( apdu.size() > 2 && ( apdu.at(1) == 0x32 || apdu.at(1) == 0x33) ) {
+            sessionTimer.count--;
+        }
+        if ( sessionTimer.count > 0 ) {
+            sessionTimer.start(SESSION_TIMEOUT_300S, this);
+        } else {
+            sessionTimer.start(SESSION_TIMEOUT_20S, this);
+        }
 #endif
 
-    return true;
+        return true;
+    });
+    return result.get();
 }
 
 keymaster_error_t OmapiTransport::openConnection() {
@@ -277,33 +284,41 @@ keymaster_error_t OmapiTransport::sendData(const vector<uint8_t>& inData, vector
 }
 
 keymaster_error_t OmapiTransport::closeConnection() {
-    LOG(DEBUG) << "Closing all connections";
-    if (channel != nullptr) channel->close();
-    if (session != nullptr) session->close();
-    if (omapiSeService != nullptr) {
-        if (mVSReaders.size() > 0) {
-            for (const auto& [name, reader] : mVSReaders) {
-                reader->closeSessions();
+    std::future<keymaster_error_t> result = std::async(std::launch::async, [this]() {
+        std::lock_guard<std::mutex> lock(connectionMutex);
+        LOG(DEBUG) << "Closing all connections";
+        if (channel != nullptr) channel->close();
+        if (session != nullptr) session->close();
+        if (omapiSeService != nullptr) {
+            if (mVSReaders.size() > 0) {
+                for (const auto& [name, reader] : mVSReaders) {
+                    reader->closeSessions();
+                }
+                mVSReaders.clear();
             }
-            mVSReaders.clear();
         }
-    }
-    omapiSeService = nullptr;
-    eSEReader = nullptr;
-    session = nullptr;
-    channel = nullptr;
-    return KM_ERROR_OK;
+        omapiSeService = nullptr;
+        eSEReader = nullptr;
+        session = nullptr;
+        channel = nullptr;
+        return KM_ERROR_OK;
+    });
+    return result.get();
 }
 
 bool OmapiTransport::isConnected() {
     // Check already initialization completed or not
-    if (omapiSeService != nullptr && eSEReader != nullptr) {
-        LOG(DEBUG) << "Connection initialization already completed";
-        return true;
-    }
+    std::future<bool> result = std::async(std::launch::async, [this]() {
+        std::lock_guard<std::mutex> lock(connectionMutex);
+        if (omapiSeService != nullptr && eSEReader != nullptr) {
+                LOG(DEBUG) << "Connection initialization already completed";
+            return true;
+        }
 
-    LOG(DEBUG) << "Connection initialization not completed";
-    return false;
+        LOG(DEBUG) << "Connection initialization not completed";
+        return false;
+    });
+    return result.get();
 }
 
 }
