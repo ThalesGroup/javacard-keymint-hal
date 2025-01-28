@@ -21,7 +21,7 @@
 #include "CborConverter.h"
 
 #define APDU_CLS 0x80
-#define APDU_P1 0x60
+#define APDU_P1 0x70
 #define APDU_P2 0x00
 #define APDU_RESP_STATUS_OK 0x9000
 
@@ -74,6 +74,7 @@ enum class Instruction {
     INS_GET_ROT_CHALLENGE_CMD = KEYMINT_CMD_APDU_START + 45,
     INS_GET_ROT_DATA_CMD = KEYMINT_CMD_APDU_START + 46,
     INS_SEND_ROT_DATA_CMD = KEYMINT_CMD_APDU_START + 47,
+    INS_SET_ATT_MODULE_INFO_CMD = KEYMINT_CMD_APDU_START + 48,
 };
 
 extern bool initialized;

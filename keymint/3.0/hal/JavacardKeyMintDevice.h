@@ -96,6 +96,8 @@ class JavacardKeyMintDevice : public BnKeyMintDevice {
 
     ScopedAStatus sendRootOfTrust(const vector<uint8_t>& rootOfTrust) override;
 
+    ScopedAStatus setAdditionalAttestationInfo(const vector<KeyParameter>& info) override;
+
   private:
     keymaster_error_t parseWrappedKey(const vector<uint8_t>& wrappedKeyData,
                                       std::vector<uint8_t>& iv, std::vector<uint8_t>& transitKey,
