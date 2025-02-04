@@ -15,31 +15,35 @@ ScopedAStatus JavacardSharedSecret::getSharedSecretParameters(SharedSecretParame
     std::vector<uint8_t> opt_seed;
     std::vector<uint8_t> opt_nonce(32, 0);
 
+    if (sharedSecretParamCounter >= MAX_GET_SHARED_PARAM_RETRIES) {
+        LOG(ERROR) << "Maximum retry attempts reached for getSharedSecretParameters.";
+        params->seed.clear();
+        params->nonce.assign(opt_nonce.begin(), opt_nonce.end());
+        sharedSecretParamCounter = 0;
+		return ScopedAStatus::ok();
+    }
+
     auto error = card_->initializeJavacard();
-    if (error != KM_ERROR_OK && (sharedSecretParamCounter < MAX_GET_SHARED_PARAM_RETRIES)) {
+    if (error != KM_ERROR_OK) {
         LOG(ERROR) << "Error in initializing javacard.";
         sharedSecretParamCounter++;
         return keymint::km_utils::kmError2ScopedAStatus(error);
     }
     auto [item, err] = card_->sendRequest(Instruction::INS_GET_SHARED_SECRET_PARAM_CMD);
-    if (err != KM_ERROR_OK && (sharedSecretParamCounter < MAX_GET_SHARED_PARAM_RETRIES)) {
+    if (err != KM_ERROR_OK) {
         LOG(ERROR) << "Error in sending in getSharedSecretParameters.";
         sharedSecretParamCounter++;
         return keymint::km_utils::kmError2ScopedAStatus(err);
     }
     auto optSSParams = cbor_.getSharedSecretParameters(item, 1);
-    if (!optSSParams  && (sharedSecretParamCounter < MAX_GET_SHARED_PARAM_RETRIES)) {
+    if (!optSSParams) {
         LOG(ERROR) << "Error in sending in getSharedSecretParameters.";
         sharedSecretParamCounter++;
         return keymint::km_utils::kmError2ScopedAStatus(KM_ERROR_UNKNOWN_ERROR);
     }
-    if (sharedSecretParamCounter < MAX_GET_SHARED_PARAM_RETRIES)
-        *params = std::move(optSSParams.value());
-    else {
-        params->seed.clear();
-        params->nonce.assign(opt_nonce.begin(), opt_nonce.end());
-        sharedSecretParamCounter = 0;
-    }
+
+    sharedSecretParamCounter = 0;
+	*params = std::move(optSSParams.value());
     return ScopedAStatus::ok();
 }
 
