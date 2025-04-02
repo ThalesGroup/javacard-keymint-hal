@@ -29,7 +29,7 @@
 #define DES_BLOCK_SIZE 8
 #define RSA_BUFFER_SIZE 256
 #define EC_BUFFER_SIZE 32
-#define MAX_CHUNK_SIZE 255
+#define MAX_CHUNK_SIZE 256
 
 namespace aidl::android::hardware::security::keymint {
 using cppbor::Array;
