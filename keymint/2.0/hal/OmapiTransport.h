@@ -11,6 +11,7 @@
 #include <aidl/android/se/omapi/ISecureElementReader.h>
 #include <aidl/android/se/omapi/ISecureElementService.h>
 #include <aidl/android/se/omapi/ISecureElementSession.h>
+#include <mutex>
 
 #include <android/binder_manager.h>
 
@@ -65,6 +66,7 @@ class OmapiTransport : public ITransport {
     bool
     internalTransmitApdu(std::shared_ptr<aidl::android::se::omapi::ISecureElementReader> reader,
                          std::vector<uint8_t> apdu, std::vector<uint8_t>& transmitResponse);
+    std::mutex connectionMutex;
 };
 
 }

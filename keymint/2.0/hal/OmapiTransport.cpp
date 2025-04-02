@@ -14,6 +14,7 @@
  ** See the License for the specific language governing permissions and
  ** limitations under the License.
  */
+#define LOG_TAG "OmapiTransport"
 #include "OmapiTransport.h"
 
 #include <arpa/inet.h>
@@ -22,17 +23,26 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include <vector>
+#include <iomanip>
+#include <future>
 
 #include <android-base/logging.h>
 #include <android-base/properties.h>
 
-#include "SessionTimer.h"
 #define ENABLE_SESSION_TIMEOUT
+#include "SessionTimer.h"
 
+#define PROP_KEYMINT_CLOSE_CHANNEL "vendor.keymint.closechannel"
+#define PROP_KEYMINT_VENDOR "persist.vendor.keymint.applet"
 
 namespace keymint::javacard {
 
-constexpr uint8_t SELECTABLE_AID[] = {0xA0, 0x00, 0x00, 0x00, 0x18, 0x43, 0x43, 0x43, 0x43, 0x43, 0x42, 0x41, 0x01};
+uint8_t SELECTABLE_AID_THALES[] = {0xA0, 0x00, 0x00, 0x00, 0x18, 0x43, 0x43, 0x43, 0x43, 0x43, 0x42, 0x41, 0x01};
+uint8_t SELECTABLE_AID_GOOGLE[] = {0xA0, 0x00, 0x00, 0x08, 0x44, 0x00, 0x00, 0xAA, 0x01};
+uint8_t *KEYMINT_APPLET_AID;
+uint8_t AID_SIZE;
+//constexpr uint8_t KEYMINT_APPLET_AID[] = {0xA0, 0x00, 0x00, 0x00, 0x62, 0x03,
+//                                          0x02, 0x0C, 0x01, 0x01, 0x01};
 std::string const ESE_READER_PREFIX = "eSE";
 constexpr const char omapiServiceName[] =
         "android.se.omapi.ISecureElementService/default";
@@ -47,6 +57,18 @@ keymaster_error_t OmapiTransport::initialize() {
 
     LOG(DEBUG) << "Initialize the secure element connection";
 
+	sessionTimer.count = 0;
+
+    if(android::base::GetProperty(PROP_KEYMINT_VENDOR, "") != "Google") {
+        LOG(DEBUG) << "Initialize the AID to be Thales";
+        KEYMINT_APPLET_AID = SELECTABLE_AID_THALES;
+        AID_SIZE = 13;
+    } else {
+        LOG(DEBUG) << "Initialize the AID to be Google";
+        KEYMINT_APPLET_AID = SELECTABLE_AID_GOOGLE;
+        AID_SIZE = 9;
+    }
+
     // Get OMAPI vendor stable service handler
     ::ndk::SpAIBinder ks2Binder(AServiceManager_checkService(omapiServiceName));
     omapiSeService = aidl::android::se::omapi::ISecureElementService::fromBinder(ks2Binder);
@@ -56,7 +78,7 @@ keymaster_error_t OmapiTransport::initialize() {
         return static_cast<keymaster_error_t>(KM_ERROR_HARDWARE_NOT_YET_AVAILABLE);
     }
 
-    int size = sizeof(SELECTABLE_AID) / sizeof(SELECTABLE_AID[0]);
+    int size = AID_SIZE;
     // reset readers, clear readers if already existing
     if (mVSReaders.size() > 0) {
         closeConnection();
@@ -120,101 +142,108 @@ bool OmapiTransport::internalTransmitApdu(
     std::shared_ptr<aidl::android::se::omapi::ISecureElementReader> reader,
     std::vector<uint8_t> apdu, std::vector<uint8_t>& transmitResponse) {
 
-    LOG(DEBUG) << "internalTransmitApdu: trasmitting data to secure element";
+    std::future<bool> result = std::async(std::launch::async, [this, reader, apdu, &transmitResponse]() {
+        std::lock_guard<std::mutex> lock(connectionMutex);
 
-#ifdef ENBALE_SESSION_TIMEOUT
-    // Stop the timer
-    LOG(DEBUG) << "Stop timeout if any.";
-    sessionTimer.stop();
-#endif
-
-    if (reader == nullptr) {
-        LOG(ERROR) << "eSE reader is null";
-        return false;
-    }
-
-    bool result = true;
-    auto res = ndk::ScopedAStatus::ok();
-    if(session != nullptr) {
-        res = session->isClosed(&result);
-        if (!res.isOk()) {
-            LOG(ERROR) << "isClosed error: " << res.getMessage();
-            return KM_ERROR_SECURE_HW_COMMUNICATION_FAILED;
-        }
-    }
-    if(result) {
-        res = reader->openSession(&session);
-        if (!res.isOk()) {
-            LOG(ERROR) << "openSession error: " << res.getMessage();
-            return false;
-        }
-        if (session == nullptr) {
-            LOG(ERROR) << "Could not open session null";
-            return false;
-        }
-    }
-
-    result = true;
-    if(channel != nullptr) {
-        res = channel->isClosed(&result);
-        if (!res.isOk()) {
-            LOG(ERROR) << "isClosed error: " << res.getMessage();
-            return KM_ERROR_SECURE_HW_COMMUNICATION_FAILED;
-        }
-    }
-
-    int size = sizeof(SELECTABLE_AID) / sizeof(SELECTABLE_AID[0]);
-    std::vector<uint8_t> aid(SELECTABLE_AID, SELECTABLE_AID + size);
-    if (result) {
-        auto mSEListener = ndk::SharedRefBase::make<SEListener>();
-        res = session->openLogicalChannel(aid, 0x00, mSEListener, &channel);
-        if (!res.isOk()) {
-            LOG(ERROR) << "openLogicalChannel error: " << res.getMessage();
-            return false;
-        }
-        if (channel == nullptr) {
-            LOG(ERROR) << "Could not open channel null";
-            return false;
-        }
-    }
-
-    std::vector<uint8_t> selectResponse = {};
-    res = channel->getSelectResponse(&selectResponse);
-    if (!res.isOk()) {
-        LOG(ERROR) << "getSelectResponse error: " << res.getMessage();
-        return false;
-    }
-
-    if (selectResponse.size() < 2)
-    {
-        LOG(ERROR) << "Failed to select the Applet.";
-        return false;
-    }
-
-    res = channel->transmit(apdu, &transmitResponse);
-
-    LOG(INFO) << "STATUS OF TRNSMIT: " << res.getExceptionCode()
-              << " Message: " << res.getMessage();
-    if (!res.isOk()) {
-        LOG(ERROR) << "transmit error: " << res.getMessage();
-        return false;
-    }
+        LOG(DEBUG) << "internalTransmitApdu: trasmitting data to secure element";
 
 #ifdef ENABLE_SESSION_TIMEOUT
-    LOG(DEBUG) << "Start timeout before closing channels ";
-    if ( apdu.size() > 2 && apdu.at(1) == 0x30 ) {
-        sessionTimer.count++;
-    } else if ( apdu.size() > 2 && apdu.at(1) == 0x32 ) {
-        sessionTimer.count--;
-    }
-    if ( sessionTimer.count > 0 ) {
-        sessionTimer.start(SESSION_TIMEOUT_300S, this);
-    } else {
-        sessionTimer.start(SESSION_TIMEOUT_20S, this);
-    }
+        // Stop the timer
+        LOG(DEBUG) << "Stop timeout if any.";
+        sessionTimer.stop();
 #endif
 
-    return true;
+        if (reader == nullptr) {
+            LOG(ERROR) << "eSE reader is null";
+            return false;
+        }
+
+        bool result = true;
+        auto res = ndk::ScopedAStatus::ok();
+        if(session != nullptr) {
+            res = session->isClosed(&result);
+            if (!res.isOk()) {
+                LOG(ERROR) << "isClosed error: " << res.getMessage();
+                return false;
+            }
+        }
+        if(result) {
+            res = reader->openSession(&session);
+            if (!res.isOk()) {
+                LOG(ERROR) << "openSession error: " << res.getMessage();
+                return false;
+            }
+            if (session == nullptr) {
+                LOG(ERROR) << "Could not open session null";
+                return false;
+            }
+        }
+
+        result = true;
+        if(channel != nullptr) {
+            res = channel->isClosed(&result);
+            if (!res.isOk()) {
+                LOG(ERROR) << "isClosed error: " << res.getMessage();
+                return false;
+            }
+        }
+
+        int size = AID_SIZE;
+        std::vector<uint8_t> aid(KEYMINT_APPLET_AID, KEYMINT_APPLET_AID + size);
+        if (result) {
+            auto mSEListener = ndk::SharedRefBase::make<SEListener>();
+            res = session->openLogicalChannel(aid, 0x00, mSEListener, &channel);
+            if (!res.isOk()) {
+                LOG(ERROR) << "openLogicalChannel error: " << res.getMessage();
+                return false;
+            }
+            if (channel == nullptr) {
+                LOG(ERROR) << "Could not open channel null";
+                return false;
+            }
+        }
+
+        std::vector<uint8_t> selectResponse = {};
+        res = channel->getSelectResponse(&selectResponse);
+        if (!res.isOk()) {
+            LOG(ERROR) << "getSelectResponse error: " << res.getMessage();
+            return false;
+        }
+
+        if ((selectResponse.size() < 2)
+            || ((selectResponse[selectResponse.size() -1] & 0xFF) != 0x00)
+            || ((selectResponse[selectResponse.size() -2] & 0xFF) != 0x90))
+        {
+            LOG(ERROR) << "Failed to select the Applet.";
+            return false;
+        }
+
+        res = channel->transmit(apdu, &transmitResponse);
+
+        LOG(INFO) << "STATUS OF TRNSMIT: " << res.getExceptionCode()
+                  << " Message: " << res.getMessage();
+        if (!res.isOk()) {
+            LOG(ERROR) << "transmit error: " << res.getMessage();
+            return false;
+        }
+
+#ifdef ENABLE_SESSION_TIMEOUT
+        LOG(DEBUG) << "Start timeout before closing channels ";
+        if ( apdu.size() > 2 && apdu.at(1) == 0x30 ) {
+            sessionTimer.count++;
+        } else if ( apdu.size() > 2 && ( apdu.at(1) == 0x32 || apdu.at(1) == 0x33) ) {
+            sessionTimer.count--;
+        }
+        if ( sessionTimer.count > 0 ) {
+            sessionTimer.start(SESSION_TIMEOUT_300S, this);
+        } else {
+            sessionTimer.start(SESSION_TIMEOUT_20S, this);
+        }
+#endif
+
+        return true;
+    });
+    return result.get();
 }
 
 keymaster_error_t OmapiTransport::openConnection() {
@@ -242,6 +271,8 @@ keymaster_error_t OmapiTransport::sendData(const vector<uint8_t>& inData, vector
     if (eSEReader != nullptr) {
         LOG(DEBUG) << "Sending apdu data to secure element: " << ESE_READER_PREFIX;
         if(internalTransmitApdu(eSEReader, inData, output)) {
+            if(android::base::GetBoolProperty(PROP_KEYMINT_CLOSE_CHANNEL, false))
+                closeConnection();
             return KM_ERROR_OK;
         } else {
             closeConnection();
@@ -254,31 +285,41 @@ keymaster_error_t OmapiTransport::sendData(const vector<uint8_t>& inData, vector
 }
 
 keymaster_error_t OmapiTransport::closeConnection() {
-    LOG(DEBUG) << "Closing all connections";
-    if (channel != nullptr) channel->close();
-    if (session != nullptr) session->close();
-    if (omapiSeService != nullptr) {
-        if (mVSReaders.size() > 0) {
-            for (const auto& [name, reader] : mVSReaders) {
-                reader->closeSessions();
+    std::future<keymaster_error_t> result = std::async(std::launch::async, [this]() {
+        std::lock_guard<std::mutex> lock(connectionMutex);
+        LOG(DEBUG) << "Closing all connections";
+        if (channel != nullptr) channel->close();
+        if (session != nullptr) session->close();
+        if (omapiSeService != nullptr) {
+            if (mVSReaders.size() > 0) {
+                for (const auto& [name, reader] : mVSReaders) {
+                    reader->closeSessions();
+                }
+                mVSReaders.clear();
             }
-            mVSReaders.clear();
         }
-    }
-    omapiSeService = nullptr;
-    eSEReader = nullptr;
-    return KM_ERROR_OK;
+        omapiSeService = nullptr;
+        eSEReader = nullptr;
+        session = nullptr;
+        channel = nullptr;
+        return KM_ERROR_OK;
+    });
+    return result.get();
 }
 
 bool OmapiTransport::isConnected() {
     // Check already initialization completed or not
-    if (omapiSeService != nullptr && eSEReader != nullptr) {
-        LOG(DEBUG) << "Connection initialization already completed";
-        return true;
-    }
+    std::future<bool> result = std::async(std::launch::async, [this]() {
+        std::lock_guard<std::mutex> lock(connectionMutex);
+        if (omapiSeService != nullptr && eSEReader != nullptr) {
+                LOG(DEBUG) << "Connection initialization already completed";
+            return true;
+        }
 
-    LOG(DEBUG) << "Connection initialization not completed";
-    return false;
+        LOG(DEBUG) << "Connection initialization not completed";
+        return false;
+    });
+    return result.get();
 }
 
 }

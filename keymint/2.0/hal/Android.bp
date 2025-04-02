@@ -100,7 +100,6 @@ cc_binary {
         "service.cpp",
     ],
     required: [
-        "RemoteProvisioner",
         "android.hardware.strongbox_keystore-thales.xml",
     ],
 }
