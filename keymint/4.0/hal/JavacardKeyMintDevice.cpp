@@ -59,8 +59,8 @@ keymaster_error_t
 getCertificateChain(std::vector<uint8_t>& chainBuffer, std::vector<Certificate>& certChain);
 
 ScopedAStatus JavacardKeyMintDevice::defaultHwInfo(KeyMintHardwareInfo* info) {
-    info->versionNumber = 2;
-    info->keyMintAuthorName = "Google";
+    info->versionNumber = 1;
+    info->keyMintAuthorName = "Thales";
     info->keyMintName = "JavacardKeymintDevice";
     info->securityLevel = securitylevel_;
     info->timestampTokenRequired = true;
