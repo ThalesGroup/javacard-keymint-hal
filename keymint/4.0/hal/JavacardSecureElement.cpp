@@ -81,37 +81,20 @@ void JavacardSecureElement::sendPendingEvents() {
 }
 
 keymaster_error_t JavacardSecureElement::constructApduMessage(Instruction& ins,
+                                                              uint8_t p2,
                                                               std::vector<uint8_t>& inputData,
                                                               std::vector<uint8_t>& apduOut) {
     apduOut.push_back(static_cast<uint8_t>(APDU_CLS));  // CLS
     apduOut.push_back(static_cast<uint8_t>(ins));       // INS
     apduOut.push_back(static_cast<uint8_t>(APDU_P1));   // P1
-    apduOut.push_back(static_cast<uint8_t>(APDU_P2));   // P2
+    apduOut.push_back(static_cast<uint8_t>(p2));   // P2
 
     if (USHRT_MAX >= inputData.size()) {
-		if( ins == Instruction::INS_UPDATE_OPERATION_CMD && inputData.size() <= 0xFF) {
-            if (inputData.size() > 0) {
-                apduOut.push_back(static_cast<uint8_t>(inputData.size()));
-                apduOut.insert(apduOut.end(), inputData.begin(), inputData.end());
-            }
-            apduOut.push_back(static_cast<uint8_t>(0x00));
-        } else {
-            // Send extended length APDU always as response size is not known to HAL.
-            // Case 1: Lc > 0  CLS | INS | P1 | P2 | 00 | 2 bytes of Lc | CommandData | 2 bytes of Le
-            // all set to 00. Case 2: Lc = 0  CLS | INS | P1 | P2 | 3 bytes of Le all set to 00.
-            // Extended length 3 bytes, starts with 0x00
-            apduOut.push_back(static_cast<uint8_t>(0x00));
-            if (inputData.size() > 0) {
-                apduOut.push_back(static_cast<uint8_t>(inputData.size() >> 8));
-                apduOut.push_back(static_cast<uint8_t>(inputData.size() & 0xFF));
-                // Data
-                apduOut.insert(apduOut.end(), inputData.begin(), inputData.end());
-            }
-            // Expected length of output.
-            // Accepting complete length of output every time.
-            apduOut.push_back(static_cast<uint8_t>(0x00));
-            apduOut.push_back(static_cast<uint8_t>(0x00));
-		}
+	if (inputData.size() > 0) {
+            apduOut.push_back(static_cast<uint8_t>(inputData.size()));
+            apduOut.insert(apduOut.end(), inputData.begin(), inputData.end());
+        }
+        apduOut.push_back(static_cast<uint8_t>(0x00));
     } else {
         LOG(ERROR) << "Error in constructApduMessage.";
         return (KM_ERROR_INVALID_INPUT_LENGTH);
@@ -122,32 +105,61 @@ keymaster_error_t JavacardSecureElement::constructApduMessage(Instruction& ins,
 keymaster_error_t JavacardSecureElement::sendData(Instruction ins, std::vector<uint8_t>& inData,
                                                   std::vector<uint8_t>& response) {
     keymaster_error_t ret = KM_ERROR_UNKNOWN_ERROR;
-    std::vector<uint8_t> apdu;
+    std::vector<uint8_t> apdu, temp_response;
+    const size_t apduChuckSize = 2;
+    size_t currentIndex = 0;
+    uint8_t p2 = 0x00;
 
-    ret = constructApduMessage(ins, inData, apdu);
+    do {
+        size_t currentChunkSize = std::min(apduChuckSize, inData.size() - currentIndex);
+        std::vector<uint8_t> apduData(inData.begin() + currentIndex, inData.begin() + currentIndex + currentChunkSize);
 
-    if (ret != KM_ERROR_OK) {
-        return ret;
-    }
+        if((inData.size() - currentIndex <= apduChuckSize) && p2 != 0x00) {
+            p2 |= 0x80;
+            p2++;
+        } else if(inData.size() - currentIndex > apduChuckSize) {
+            p2++;
+        }
 
-    ret = transport_->sendData(apdu, response);
-    if (ret != KM_ERROR_OK) {
-        LOG(ERROR) << "Error in sending data in sendData. " << static_cast<int>(ret);
-        return ret;
-    }
+        currentIndex += currentChunkSize;
+        LOG(DEBUG) << "inData.size() =  " << inData.size();
+        LOG(DEBUG) << "currentIndex =  " << currentIndex;
+        LOG(DEBUG) << "currentChunkSize =  " << currentChunkSize;
 
+        LOG(DEBUG) << "p2 =  " << std::hex << p2;
+
+        apdu.clear();
+        ret = constructApduMessage(ins, p2, apduData, apdu);
+
+        LOG(DEBUG) << "apdu.size() =  " << apdu.size();
+        LOG(DEBUG) << "ret =  " << ret;
+        if (ret != KM_ERROR_OK) {
+            return ret;
+        }
+
+        temp_response.clear();
+        ret = transport_->sendData(apdu, temp_response);
+        if (ret != KM_ERROR_OK) {
+            LOG(ERROR) << "Error in sending data in sendData. " << ret;
+            return ret;
+        }
+
+        if (getApduStatus(temp_response) != APDU_RESP_STATUS_OK) {
+            LOG(ERROR) << "Response of the sendData is wrong: temp_response size = apdu status = " << getApduStatus(temp_response);
+            return (KM_ERROR_UNKNOWN_ERROR);
+        }
+    } while (currentIndex < inData.size());
     // Response size should be greater than 2. Cbor output data followed by two bytes of APDU
     // status.
-    if (response.size() <= 2){
-        LOG(ERROR) << "Response of the sendData is wrong: response size = " << response.size();
-        return (KM_ERROR_UNKNOWN_ERROR);
-    } else if (getApduStatus(response) != APDU_RESP_STATUS_OK) {
-        LOG(ERROR) << "Response of the sendData is wrong: response size = apdu status = " << getApduStatus(response);
+    if (temp_response.size() <= 2){
+        LOG(ERROR) << "Response of the sendData is wrong: temp_response size = " << temp_response.size();
         return (KM_ERROR_UNKNOWN_ERROR);
     }
     // remove the status bytes
-    response.pop_back();
-    response.pop_back();
+    temp_response.pop_back();
+    temp_response.pop_back();
+    response.insert(response.end(), temp_response.begin(), temp_response.end());
+
     return (KM_ERROR_OK);  // success
 }
 

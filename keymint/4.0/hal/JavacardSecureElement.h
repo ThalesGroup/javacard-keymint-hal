@@ -97,7 +97,7 @@ class JavacardSecureElement {
     keymaster_error_t sendData(Instruction ins, std::vector<uint8_t>& inData,
                                std::vector<uint8_t>& response);
 
-    keymaster_error_t constructApduMessage(Instruction& ins, std::vector<uint8_t>& inputData,
+    keymaster_error_t constructApduMessage(Instruction& ins, uint8_t p2, std::vector<uint8_t>& inputData,
                                            std::vector<uint8_t>& apduOut);
     keymaster_error_t initializeJavacard();
     void sendPendingEvents();
