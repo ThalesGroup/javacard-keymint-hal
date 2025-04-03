@@ -37,7 +37,7 @@
 
 namespace keymint::javacard {
 
-uint8_t SELECTABLE_AID_THALES[] = {0xA0, 0x00, 0x00, 0x00, 0x18, 0x43, 0x43, 0x43, 0x43, 0x43, 0x42, 0x41, 0x01};
+uint8_t SELECTABLE_AID_THALES[] = {0xA0, 0x00, 0x00, 0x08, 0x70, 0xFC, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10};
 uint8_t SELECTABLE_AID_GOOGLE[] = {0xA0, 0x00, 0x00, 0x08, 0x44, 0x00, 0x00, 0xAA, 0x01};
 uint8_t *KEYMINT_APPLET_AID;
 uint8_t AID_SIZE;
@@ -62,7 +62,7 @@ keymaster_error_t OmapiTransport::initialize() {
     if(android::base::GetProperty(PROP_KEYMINT_VENDOR, "") != "Google") {
         LOG(DEBUG) << "Initialize the AID to be Thales";
         KEYMINT_APPLET_AID = SELECTABLE_AID_THALES;
-        AID_SIZE = 13;
+        AID_SIZE = 12;
     } else {
         LOG(DEBUG) << "Initialize the AID to be Google";
         KEYMINT_APPLET_AID = SELECTABLE_AID_GOOGLE;
