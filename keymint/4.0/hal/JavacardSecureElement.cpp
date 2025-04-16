@@ -89,12 +89,24 @@ keymaster_error_t JavacardSecureElement::constructApduMessage(Instruction& ins,
     apduOut.push_back(static_cast<uint8_t>(APDU_P1));   // P1
     apduOut.push_back(static_cast<uint8_t>(p2));   // P2
 
+
     if (USHRT_MAX >= inputData.size()) {
-	if (inputData.size() > 0) {
-            apduOut.push_back(static_cast<uint8_t>(inputData.size()));
-            apduOut.insert(apduOut.end(), inputData.begin(), inputData.end());
-        }
-        apduOut.push_back(static_cast<uint8_t>(0x00));
+		// Send extended length APDU always as response size is not known to HAL.
+		// Case 1: Lc > 0  CLS | INS | P1 | P2 | 00 | 2 bytes of Lc | CommandData | 2 bytes of Le
+		// all set to 00. Case 2: Lc = 0  CLS | INS | P1 | P2 | 3 bytes of Le all set to 00.
+		// Extended length 3 bytes, starts with 0x00
+		apduOut.push_back(static_cast<uint8_t>(0x00));
+		if (inputData.size() > 0) {
+			apduOut.push_back(static_cast<uint8_t>(inputData.size() >> 8));
+			apduOut.push_back(static_cast<uint8_t>(inputData.size() & 0xFF));
+			// Data
+			apduOut.insert(apduOut.end(), inputData.begin(), inputData.end());
+		}
+		// Expected length of output.
+		// Accepting complete length of output every time.
+		apduOut.push_back(static_cast<uint8_t>(0x00));
+		apduOut.push_back(static_cast<uint8_t>(0x00));
+
     } else {
         LOG(ERROR) << "Error in constructApduMessage.";
         return (KM_ERROR_INVALID_INPUT_LENGTH);
@@ -106,7 +118,7 @@ keymaster_error_t JavacardSecureElement::sendData(Instruction ins, std::vector<u
                                                   std::vector<uint8_t>& response) {
     keymaster_error_t ret = KM_ERROR_UNKNOWN_ERROR;
     std::vector<uint8_t> apdu, temp_response;
-    const size_t apduChuckSize = 2;
+    const size_t apduChuckSize = 255;
     size_t currentIndex = 0;
     uint8_t p2 = 0x00;
 
