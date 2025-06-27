@@ -32,6 +32,9 @@
 #define ENABLE_SESSION_TIMEOUT
 #include "SessionTimer.h"
 
+#define MAX_INIT_COUNT 15
+#define MAX_SEND_COUNT 5
+#define INIT_RETRY_DELAY 1000 //ms
 #define PROP_KEYMINT_CLOSE_CHANNEL "vendor.keymint.closechannel"
 #define PROP_KEYMINT_VENDOR "persist.vendor.keymint.applet"
 
@@ -53,12 +56,13 @@ class SEListener : public ::aidl::android::se::omapi::BnSecureElementListener {}
 Timer sessionTimer;
 #endif
 
+static uint8_t initCounter = 0;
 keymaster_error_t OmapiTransport::initialize() {
-
+    std::vector<std::string> readers = {};
     LOG(DEBUG) << "Initialize the secure element connection";
+    initCounter = 0;
 
-	sessionTimer.count = 0;
-
+    sessionTimer.count = 0;
     if(android::base::GetProperty(PROP_KEYMINT_VENDOR, "") != "Google") {
         LOG(DEBUG) << "Initialize the AID to be Thales";
         KEYMINT_APPLET_AID = SELECTABLE_AID_THALES;
@@ -69,58 +73,83 @@ keymaster_error_t OmapiTransport::initialize() {
         AID_SIZE = 9;
     }
 
-    // Get OMAPI vendor stable service handler
-    ::ndk::SpAIBinder ks2Binder(AServiceManager_checkService(omapiServiceName));
-    omapiSeService = aidl::android::se::omapi::ISecureElementService::fromBinder(ks2Binder);
-
-    if (omapiSeService == nullptr) {
-        LOG(ERROR) << "Failed to start omapiSeService null";
-        return static_cast<keymaster_error_t>(KM_ERROR_HARDWARE_NOT_YET_AVAILABLE);
-    }
-
-    int size = AID_SIZE;
-    // reset readers, clear readers if already existing
-    if (mVSReaders.size() > 0) {
+    initCounter = 0;
+    do {
+        LOG(DEBUG) << "Close all existing connection if any";
         closeConnection();
-    }
+        readers.clear();
 
-    std::vector<std::string> readers = {};
-    // Get available readers
-    auto status = omapiSeService->getReaders(&readers);
-    if (!status.isOk()) {
-        LOG(ERROR) << "getReaders failed to get available readers: " << status.getMessage();
-        return static_cast<keymaster_error_t>(KM_ERROR_HARDWARE_TYPE_UNAVAILABLE);
-    }
 
-    // Get SE readers handlers
-    for (auto readerName : readers) {
-        std::shared_ptr<::aidl::android::se::omapi::ISecureElementReader> reader;
-        status = omapiSeService->getReader(readerName, &reader);
+
+        // Get OMAPI vendor stable service handler
+        ::ndk::SpAIBinder ks2Binder(AServiceManager_checkService(omapiServiceName));
+        omapiSeService = aidl::android::se::omapi::ISecureElementService::fromBinder(ks2Binder);
+
+        if (omapiSeService == nullptr) {
+            LOG(ERROR) << "Failed to start omapiSeService null";
+            if(initCounter < MAX_INIT_COUNT) {
+                initCounter++;
+                usleep(INIT_RETRY_DELAY * 1000);
+                continue;
+            }
+           return static_cast<keymaster_error_t>(KM_ERROR_HARDWARE_NOT_YET_AVAILABLE);
+        }
+
+        int size = AID_SIZE;
+
+        // Get available readers
+        auto status = omapiSeService->getReaders(&readers);
         if (!status.isOk()) {
-            LOG(ERROR) << "getReader for " << readerName.c_str()
-                       << " Failed: " << status.getMessage();
+            LOG(ERROR) << "getReaders failed to get available readers: " << status.getMessage();
+            if(initCounter < MAX_INIT_COUNT) {
+                initCounter++;
+                usleep(INIT_RETRY_DELAY * 1000);
+                continue;
+            }
             return static_cast<keymaster_error_t>(KM_ERROR_HARDWARE_TYPE_UNAVAILABLE);
         }
-        mVSReaders[readerName] = reader;
-    }
 
-    // Find eSE reader, as of now assumption is only eSE available on device
-    LOG(DEBUG) << "Finding eSE reader";
-    eSEReader = nullptr;
-    if (mVSReaders.size() > 0) {
-        for (const auto& [name, reader] : mVSReaders) {
-            if (name.find(ESE_READER_PREFIX, 0) != std::string::npos) {
-                LOG(DEBUG) << "eSE reader found: " << name;
-                eSEReader = reader;
-                break;
+    // Get SE readers handlers
+        for (auto readerName : readers) {
+            std::shared_ptr<::aidl::android::se::omapi::ISecureElementReader> reader;
+            status = omapiSeService->getReader(readerName, &reader);
+            if (!status.isOk()) {
+                LOG(ERROR) << "getReader for " << readerName.c_str()
+                           << " Failed: " << status.getMessage();
+                if(initCounter < MAX_INIT_COUNT) {
+                    initCounter++;
+                    usleep(INIT_RETRY_DELAY * 1000);
+                    continue;
+                }
+                return static_cast<keymaster_error_t>(KM_ERROR_HARDWARE_TYPE_UNAVAILABLE);
+            }
+            mVSReaders[readerName] = reader;
+        }
+
+        // Find eSE reader, as of now assumption is only eSE available on device
+        LOG(DEBUG) << "Finding eSE reader";
+        eSEReader = nullptr;
+        if (mVSReaders.size() > 0) {
+            for (const auto& [name, reader] : mVSReaders) {
+                if (name.find(ESE_READER_PREFIX, 0) != std::string::npos) {
+                    LOG(DEBUG) << "eSE reader found: " << name;
+                    eSEReader = reader;
+                    break;
+                }
             }
         }
-    }
 
-    if (eSEReader == nullptr) {
-        LOG(ERROR) << "secure element reader " << ESE_READER_PREFIX << " not found";
-        return static_cast<keymaster_error_t>(KM_ERROR_HARDWARE_TYPE_UNAVAILABLE);
-    }
+        if (eSEReader == nullptr) {
+            LOG(ERROR) << "secure element reader " << ESE_READER_PREFIX << " not found";
+            if(initCounter < MAX_INIT_COUNT) {
+                initCounter++;
+                usleep(INIT_RETRY_DELAY * 1000);
+                continue;
+            }
+            return static_cast<keymaster_error_t>(KM_ERROR_HARDWARE_TYPE_UNAVAILABLE);
+        }
+        initCounter = 0;
+    } while (initCounter > 0 && initCounter < MAX_INIT_COUNT+1);
 
     bool isSecureElementPresent = false;
     auto res = eSEReader->isSecureElementPresent(&isSecureElementPresent);
