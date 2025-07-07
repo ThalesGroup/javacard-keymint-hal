@@ -75,18 +75,27 @@ cc_library {
     vendor_available: true,
     srcs: [
         "SocketTransport.cpp",
-       "OmapiTransport.cpp"
+       "SeTransport.cpp"
     ],
     export_include_dirs: [
         "."
     ],
+
+    cflags: [
+        "-Wno-unused-parameter",
+        "-Wno-unused-private-field",
+    ],
+
+
     shared_libs: [
         "libbinder",
         "libbase",
         "liblog",
         "libbinder_ndk",
         "android.se.omapi-V1-ndk",
-        "libhardware"
+        "libhardware",
+        "libcutils",
+        "android.hardware.secure_element-V1-ndk",
     ],
 }
 
@@ -121,6 +130,7 @@ cc_binary {
         "liblog",
         "libutils",
         "android.se.omapi-V1-ndk",
+        "android.hardware.secure_element-V1-ndk",
     ],
     srcs: [
         "service.cpp",

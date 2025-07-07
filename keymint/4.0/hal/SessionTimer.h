@@ -47,7 +47,7 @@ private:
     // Static callback function required by timer_create
     static void timerCallback(int signal) {
         LOG(DEBUG) << "signal: " << signal;
-        keymint::javacard::OmapiTransport *transport = (keymint::javacard::OmapiTransport*)transport_ptr;
+        keymint::javacard::SeTransport *transport = (keymint::javacard::SeTransport*)transport_ptr;
         if (transport != nullptr) {
             transport->closeConnection();
         }

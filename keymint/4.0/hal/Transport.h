@@ -48,10 +48,10 @@ class ITransport {
 };
 
 /**
- * OmapiTransport is derived from ITransport. This class gets the OMAPI service binder instance and uses IPC to
- * communicate with OMAPI service. OMAPI inturn communicates with hardware via ISecureElement.
+ * SeTransport is derived from ITransport. This class gets the SecureElement HAL service binder instance and uses IPC to
+ * communicate it.
  */
-class OmapiTransport : public ITransport {
+class SeTransport : public ITransport {
 
 public:
 
