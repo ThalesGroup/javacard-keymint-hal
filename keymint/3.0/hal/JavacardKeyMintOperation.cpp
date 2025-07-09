@@ -96,6 +96,9 @@ ScopedAStatus JavacardKeyMintOperation::finish(const optional<vector<uint8_t>>& 
             if (err != KM_ERROR_OK) {
                 return km_utils::kmError2ScopedAStatus(err);
             }
+            //Retrieve token value
+            aToken = authToken.value_or(HardwareAuthToken());
+            tToken = timestampToken.value_or(TimeStampToken());
         }
     } else {
         keymaster_error_t err = bufferData(view);
