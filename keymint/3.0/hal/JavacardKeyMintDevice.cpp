@@ -201,11 +201,37 @@ ScopedAStatus JavacardKeyMintDevice::importWrappedKey(const vector<uint8_t>& wra
     vector<KeyParameter> authList;
     KeyFormat keyFormat;
     std::vector<uint8_t> wrappedKeyDescription;
+    int64_t userSecureIdTargets = 0;
     keymaster_error_t errorCode = parseWrappedKey(wrappedKeyData, iv, transitKey, secureKey, tag,
                                                   authList, keyFormat, wrappedKeyDescription);
     if (errorCode != KM_ERROR_OK) {
         LOG(ERROR) << "Error in parse wrapped key in importWrappedKey.";
         return km_utils::kmError2ScopedAStatus(errorCode);
+    }
+
+    if (auto it = std::find_if(
+        authList.begin(), authList.end(),
+        [](const KeyParameter& param) -> bool { return (param.tag == Tag::USER_SECURE_ID); });
+        it != authList.end()) {
+
+        LOG(VERBOSE) << "Found user secure id entry. Substituting to provided secure ids.";
+        userSecureIdTargets = it->value.get<KeyParameterValue::Tag::longInteger>();
+
+        if (userSecureIdTargets & static_cast<int32_t>(HardwareAuthenticatorType::PASSWORD)) {
+            LOG(VERBOSE) << "Appending passwordSid for importWrappedKey. ";
+            authList.erase(it);   //remove the user_secure_id
+            authList.emplace_back(
+                Tag::USER_SECURE_ID,
+                KeyParameterValue::make<KeyParameterValue::Tag::longInteger>(passwordSid)
+            );
+        } else if (userSecureIdTargets & static_cast<int32_t>(HardwareAuthenticatorType::FINGERPRINT)) {
+            LOG(VERBOSE) << "Appending biometricSic for importWrappedKey.";
+            authList.erase(it);   //remove the user_secure_id
+            authList.emplace_back(
+                Tag::USER_SECURE_ID,
+                KeyParameterValue::make<KeyParameterValue::Tag::longInteger>(biometricSid)
+            );
+        }
     }
 
     // begin import
@@ -567,5 +593,18 @@ getCertificateChain(std::vector<uint8_t>& chainBuffer, std::vector<Certificate>&
     }
     return KM_ERROR_OK;
 }
+
+ScopedAStatus JavacardKeyMintDevice::setAdditionalAttestationInfo(const vector<KeyParameter>& info) {
+    cppbor::Array request;
+    // add key params
+    cbor_.addKeyparameters(request, info);
+    auto [item, err] = card_->sendRequest(Instruction::INS_SET_ATT_MODULE_INFO_CMD, request);
+    if (err != KM_ERROR_OK) {
+        LOG(ERROR) << "Error in sending in setAdditionalAttestationInfo.";
+        return km_utils::kmError2ScopedAStatus(err);
+    }
+    return ScopedAStatus::ok();
+}
+
 
 }  // namespace aidl::android::hardware::security::keymint
