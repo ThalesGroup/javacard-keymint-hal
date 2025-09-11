@@ -62,7 +62,7 @@ private:
 
     // Static callback function required by timer_create
     static void timerCallback(sigval sv) {
-        keymint::javacard::SeTransport *transport = (keymint::javacard::SeTransport*)sv.sival_ptr;
+        keymint::javacard::OmapiTransport *transport = (keymint::javacard::OmapiTransport*)sv.sival_ptr;
         if (transport != nullptr) {
             transport->closeConnection();
         }
