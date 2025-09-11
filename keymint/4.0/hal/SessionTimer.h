@@ -1,14 +1,15 @@
 #include <iostream>
 #include <android-base/logging.h>
 #include <android-base/properties.h>
-#include <csignal>
+#include <signal.h>
+#include <time.h>
 #include <unistd.h>
 #include <atomic>
 
 class Timer {
 public:
     int count = 0;
-    Timer() : is_running(false) {}
+    Timer() : timer_id(0), is_running(false) {}
 
     ~Timer() {
         stop();
@@ -18,15 +19,30 @@ public:
     void start(int timeout_ms, void* ptr) {
         if (!is_running) {
             is_running = true;
-            transport_ptr = ptr;
-            
-            if (std::signal(SIGALRM, &timerCallback) == SIG_ERR) {
-                LOG(ERROR) << "Error setting up signal handler for SIGALRM. " << std::endl;
+
+            // Set up the timer
+            struct sigevent sev;
+            sev.sigev_notify = SIGEV_THREAD;
+            sev.sigev_value.sival_ptr = ptr;
+            sev.sigev_notify_function = &timerCallback;
+            sev.sigev_notify_attributes = nullptr;
+
+            struct itimerspec its;
+            its.it_value.tv_sec = timeout_ms / 1000;
+            its.it_value.tv_nsec = (timeout_ms % 1000) * 1000000;
+            its.it_interval.tv_sec = 0;
+            its.it_interval.tv_nsec = 0;
+
+            if (timer_create(CLOCK_BOOTTIME_ALARM, &sev, &timer_id) == -1) {
+                std::cerr << "Failed to create timer" << std::endl;
+                is_running = false;
                 return;
             }
-            
-            if (alarm(timeout_ms / 1000) != 0) {
-                LOG(ERROR) << "Error setting the alarm. " << std::endl;
+
+            if (timer_settime(timer_id, 0, &its, nullptr) == -1) {
+                std::cerr << "Failed to set timer" << std::endl;
+                timer_delete(timer_id);
+                is_running = false;
                 return;
             }
         }
@@ -36,22 +52,19 @@ public:
     void stop() {
         if (is_running) {
             is_running = false;
-            alarm(0);
+            timer_delete(timer_id);
         }
     }
 
 private:
+    timer_t timer_id;
     std::atomic<bool> is_running;
-    static void* transport_ptr;
 
     // Static callback function required by timer_create
-    static void timerCallback(int signal) {
-        LOG(DEBUG) << "signal: " << signal;
-        keymint::javacard::OmapiTransport *transport = (keymint::javacard::OmapiTransport*)transport_ptr;
+    static void timerCallback(sigval sv) {
+        keymint::javacard::SeTransport *transport = (keymint::javacard::SeTransport*)sv.sival_ptr;
         if (transport != nullptr) {
             transport->closeConnection();
         }
     }
 };
-
-void* Timer::transport_ptr = nullptr;
