@@ -82,7 +82,7 @@ extern bool initialized;
 class JavacardSecureElement {
   public:
     explicit JavacardSecureElement(shared_ptr<ITransport> transport)
-        : transport_(transport), isEarlyBootEndedPending(false), isDeleteAllKeysPending(false) {
+        : transport_(transport), isEarlyBootEndedPending(false), isDeleteAllKeysPending(false), isInitPending(true) {
         initialized = false;
         transport_->openConnection();
     }
@@ -115,6 +115,7 @@ class JavacardSecureElement {
     shared_ptr<ITransport> transport_;
     bool isEarlyBootEndedPending;
     bool isDeleteAllKeysPending;
+    bool isInitPending;
     CborConverter cbor_;
 };
 }  // namespace keymint::javacard

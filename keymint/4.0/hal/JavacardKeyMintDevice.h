@@ -38,9 +38,7 @@ using std::vector;
 class JavacardKeyMintDevice : public BnKeyMintDevice {
   public:
     explicit JavacardKeyMintDevice(shared_ptr<JavacardSecureElement> card)
-        : securitylevel_(SecurityLevel::STRONGBOX), card_(card) {
-        card_->initializeJavacard();
-    }
+        : securitylevel_(SecurityLevel::STRONGBOX), card_(card) {}
     virtual ~JavacardKeyMintDevice() {}
 
     ScopedAStatus getHardwareInfo(KeyMintHardwareInfo* info) override;
