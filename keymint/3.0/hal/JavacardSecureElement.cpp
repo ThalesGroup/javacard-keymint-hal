@@ -85,6 +85,14 @@ void JavacardSecureElement::setEarlyBootEndedPending() {
 }
 
 void JavacardSecureElement::sendPendingEvents() {
+    if (isInitPending) {
+        if (initializeJavacard() == KM_ERROR_OK) {
+            isInitPending = false;
+        } else {
+            LOG(ERROR) << "Error in sending INIT_STRONGBOX request.";
+        }
+    }
+
     if (isDeleteAllKeysPending) {
         auto [_, err] = sendRequest(Instruction::INS_DELETE_ALL_KEYS_CMD);
         if (err == KM_ERROR_OK) {
