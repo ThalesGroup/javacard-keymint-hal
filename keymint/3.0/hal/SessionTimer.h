@@ -34,13 +34,13 @@ public:
             its.it_interval.tv_nsec = 0;
 
             if (timer_create(CLOCK_BOOTTIME_ALARM, &sev, &timer_id) == -1) {
-                std::cerr << "Failed to create timer" << std::endl;
+                LOG(ERROR) << "Failed to create timer" << std::endl;
                 is_running = false;
                 return;
             }
 
             if (timer_settime(timer_id, 0, &its, nullptr) == -1) {
-                std::cerr << "Failed to set timer" << std::endl;
+                LOG(ERROR) << "Failed to set timer" << std::endl;
                 timer_delete(timer_id);
                 is_running = false;
                 return;
@@ -53,6 +53,7 @@ public:
         if (is_running) {
             is_running = false;
             timer_delete(timer_id);
+            timer_id = 0;
         }
     }
 
