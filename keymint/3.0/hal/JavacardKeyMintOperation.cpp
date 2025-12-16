@@ -39,17 +39,37 @@ JavacardKeyMintOperation::~JavacardKeyMintOperation() {
 ScopedAStatus JavacardKeyMintOperation::updateAad(const vector<uint8_t>& input,
                                                   const optional<HardwareAuthToken>& authToken,
                                                   const optional<TimeStampToken>& timestampToken) {
-    cppbor::Array request;
-    request.add(Uint(opHandle_));
-    request.add(Bstr(input));
-    cbor_.addHardwareAuthToken(request, authToken.value_or(HardwareAuthToken()));
-    cbor_.addTimeStampToken(request, timestampToken.value_or(TimeStampToken()));
-    auto [item, err] = card_->sendRequest(Instruction::INS_UPDATE_AAD_OPERATION_CMD, request);
-    if (err != KM_ERROR_OK) {
-        return km_utils::kmError2ScopedAStatus(err);
+    const size_t inputChunkSize = 2048;
+    size_t currentIndex = 0;
+
+    HardwareAuthToken aToken = authToken.value_or(HardwareAuthToken());
+    TimeStampToken tToken = timestampToken.value_or(TimeStampToken());
+
+    for (size_t currentIndex = 0; currentIndex < input.size();) {
+        size_t currentChunkSize = std::min(inputChunkSize, input.size() - currentIndex);
+        std::vector<uint8_t> inputBatch(input.begin() + currentIndex,
+                                        input.begin() + currentIndex + currentChunkSize);
+
+        currentIndex += currentChunkSize;
+
+        cppbor::Array request;
+        request.add(Uint(opHandle_));
+        request.add(Bstr(inputBatch));
+        cbor_.addHardwareAuthToken(request, aToken);
+        cbor_.addTimeStampToken(request, tToken);
+        auto [item, err] = card_->sendRequest(Instruction::INS_UPDATE_AAD_OPERATION_CMD, request);
+        if (err != KM_ERROR_OK) {
+            return km_utils::kmError2ScopedAStatus(err);
+        }
+
+        // Q: Do this here too?
+        if (!aToken.mac.empty()) aToken = HardwareAuthToken();
+        if (!tToken.mac.empty()) tToken = TimeStampToken();
     }
+
     return ScopedAStatus::ok();
 }
+
 
 ScopedAStatus JavacardKeyMintOperation::update(const vector<uint8_t>& input,
                                                const optional<HardwareAuthToken>& authToken,
