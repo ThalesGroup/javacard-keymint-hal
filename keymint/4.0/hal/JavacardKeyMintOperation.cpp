@@ -39,7 +39,7 @@ JavacardKeyMintOperation::~JavacardKeyMintOperation() {
 ScopedAStatus JavacardKeyMintOperation::updateAad(const vector<uint8_t>& input,
                                                   const optional<HardwareAuthToken>& authToken,
                                                   const optional<TimeStampToken>& timestampToken) {
-    const size_t inputChunkSize = 2048;
+    const size_t inputChunkSize = MAX_CHUNK_SIZE;
     size_t currentIndex = 0;
 
     HardwareAuthToken aToken = authToken.value_or(HardwareAuthToken());
@@ -62,7 +62,6 @@ ScopedAStatus JavacardKeyMintOperation::updateAad(const vector<uint8_t>& input,
             return km_utils::kmError2ScopedAStatus(err);
         }
 
-        // Q: Do this here too?
         if (!aToken.mac.empty()) aToken = HardwareAuthToken();
         if (!tToken.mac.empty()) tToken = TimeStampToken();
     }
