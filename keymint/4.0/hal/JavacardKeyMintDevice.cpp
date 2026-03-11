@@ -207,7 +207,10 @@ ScopedAStatus JavacardKeyMintDevice::importWrappedKey(const vector<uint8_t>& wra
     if (errorCode != KM_ERROR_OK) {
         LOG(ERROR) << "Error in parse wrapped key in importWrappedKey.";
         return km_utils::kmError2ScopedAStatus(errorCode);
-    }
+		
+    #ifdef KM400_ASN1
+	}
+    #else
 
     if (auto it = std::find_if(
         authList.begin(), authList.end(),
@@ -232,7 +235,9 @@ ScopedAStatus JavacardKeyMintDevice::importWrappedKey(const vector<uint8_t>& wra
                 KeyParameterValue::make<KeyParameterValue::Tag::longInteger>(biometricSid)
             );
         }
-    }
+      }
+     #endif
+    
 
     // begin import
     std::tie(item, errorCode) =
@@ -281,8 +286,11 @@ JavacardKeyMintDevice::sendFinishImportWrappedKeyCmd(
     const std::vector<uint8_t>& iv, const std::vector<uint8_t>& wrappedKeyDescription,
     int64_t passwordSid, int64_t biometricSid) {
     Array request;
+    #ifdef KM400_ASN1
+    #else
     cbor_.addKeyparameters(request, keyParams);
     request.add(static_cast<uint64_t>(keyFormat));
+    #endif
     request.add(std::vector<uint8_t>(secureKey));
     request.add(std::vector<uint8_t>(tag));
     request.add(std::vector<uint8_t>(iv));
@@ -459,8 +467,12 @@ JavacardKeyMintDevice::parseWrappedKey(const vector<uint8_t>& wrappedKeyData,
     transitKey = km_utils::kmBlob2vector(kmTransitKey);
     secureKey = km_utils::kmBlob2vector(kmSecureKey);
     tag = km_utils::kmBlob2vector(kmTag);
+	
+	#ifdef KM400_ASN1
+    #else
     authList = km_utils::kmParamSet2Aidl(authSet);
     keyFormat = static_cast<KeyFormat>(kmKeyFormat);
+	#endif
     wrappedKeyDescription = km_utils::kmBlob2vector(kmWrappedKeyDescription);
     return KM_ERROR_OK;
 }
