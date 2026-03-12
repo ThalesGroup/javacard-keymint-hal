@@ -207,9 +207,9 @@ ScopedAStatus JavacardKeyMintDevice::importWrappedKey(const vector<uint8_t>& wra
     if (errorCode != KM_ERROR_OK) {
         LOG(ERROR) << "Error in parse wrapped key in importWrappedKey.";
         return km_utils::kmError2ScopedAStatus(errorCode);
+	}
         
     #ifdef KM400_ASN1
-	}
     #else
 
     if (auto it = std::find_if(
