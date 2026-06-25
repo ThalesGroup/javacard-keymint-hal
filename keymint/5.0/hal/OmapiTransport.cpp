@@ -25,6 +25,8 @@
 #include <vector>
 #include <iomanip>
 #include <future>
+#include <chrono>
+#include <thread>
 
 #include <android-base/logging.h>
 #include <android-base/properties.h>
@@ -60,7 +62,6 @@ static uint8_t initCounter = 0;
 keymaster_error_t OmapiTransport::initialize() {
     std::vector<std::string> readers = {};
     LOG(DEBUG) << "Initialize the secure element connection";
-    initCounter = 0;
 
     sessionTimer.count = 0;
     if(android::base::GetProperty(PROP_KEYMINT_VENDOR, "") != "Google") {
@@ -73,13 +74,15 @@ keymaster_error_t OmapiTransport::initialize() {
         AID_SIZE = 9;
     }
 
-    initCounter = 0;
-    do {
+    for (initCounter = 0; initCounter <= MAX_INIT_COUNT; initCounter++) {
+        LOG(DEBUG) << "Initialization attempt " << (int)initCounter + 1 << "/" << MAX_INIT_COUNT + 1;
+
         LOG(DEBUG) << "Close all existing connection if any";
         closeConnection();
         readers.clear();
+        mVSReaders.clear();  // Also clear the readers map
 
-
+        bool shouldRetry = false;
 
         // Get OMAPI vendor stable service handler
         ::ndk::SpAIBinder ks2Binder(AServiceManager_checkService(omapiServiceName));
@@ -87,43 +90,34 @@ keymaster_error_t OmapiTransport::initialize() {
 
         if (omapiSeService == nullptr) {
             LOG(ERROR) << "Failed to start omapiSeService null";
-            if(initCounter < MAX_INIT_COUNT) {
-                initCounter++;
-                usleep(INIT_RETRY_DELAY * 1000);
-                continue;
-            }
-           return static_cast<keymaster_error_t>(KM_ERROR_HARDWARE_NOT_YET_AVAILABLE);
+            std::this_thread::sleep_for(std::chrono::milliseconds(INIT_RETRY_DELAY));
+            continue;  // Retry
         }
-
-        int size = AID_SIZE;
 
         // Get available readers
         auto status = omapiSeService->getReaders(&readers);
         if (!status.isOk()) {
             LOG(ERROR) << "getReaders failed to get available readers: " << status.getMessage();
-            if(initCounter < MAX_INIT_COUNT) {
-                initCounter++;
-                usleep(INIT_RETRY_DELAY * 1000);
-                continue;
-            }
-            return static_cast<keymaster_error_t>(KM_ERROR_HARDWARE_TYPE_UNAVAILABLE);
+            std::this_thread::sleep_for(std::chrono::milliseconds(INIT_RETRY_DELAY));
+            continue;  // Retry
         }
 
     // Get SE readers handlers
-        for (auto readerName : readers) {
+        for (const auto& readerName : readers){
             std::shared_ptr<::aidl::android::se::omapi::ISecureElementReader> reader;
             status = omapiSeService->getReader(readerName, &reader);
-            if (!status.isOk()) {
+            if (!status.isOk() || reader == nullptr) {
                 LOG(ERROR) << "getReader for " << readerName.c_str()
                            << " Failed: " << status.getMessage();
-                if(initCounter < MAX_INIT_COUNT) {
-                    initCounter++;
-                    usleep(INIT_RETRY_DELAY * 1000);
-                    continue;
-                }
-                return static_cast<keymaster_error_t>(KM_ERROR_HARDWARE_TYPE_UNAVAILABLE);
+                shouldRetry = true;
+                break;  // Break out of for loop, will retry do-while
             }
             mVSReaders[readerName] = reader;
+        }
+
+        if (shouldRetry) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(INIT_RETRY_DELAY));
+            continue;  // Retry the main loop
         }
 
         // Find eSE reader, as of now assumption is only eSE available on device
@@ -141,30 +135,35 @@ keymaster_error_t OmapiTransport::initialize() {
 
         if (eSEReader == nullptr) {
             LOG(ERROR) << "secure element reader " << ESE_READER_PREFIX << " not found";
-            if(initCounter < MAX_INIT_COUNT) {
-                initCounter++;
-                usleep(INIT_RETRY_DELAY * 1000);
-                continue;
-            }
-            return static_cast<keymaster_error_t>(KM_ERROR_HARDWARE_TYPE_UNAVAILABLE);
+            std::this_thread::sleep_for(std::chrono::milliseconds(INIT_RETRY_DELAY));
+            continue;  // Retry
         }
-        initCounter = 0;
-    } while (initCounter > 0 && initCounter < MAX_INIT_COUNT+1);
 
-    bool isSecureElementPresent = false;
-    auto res = eSEReader->isSecureElementPresent(&isSecureElementPresent);
-    if (!res.isOk()) {
-        eSEReader = nullptr;
-        LOG(ERROR) << "isSecureElementPresent error: " << res.getMessage();
-        return static_cast<keymaster_error_t>(KM_ERROR_HARDWARE_TYPE_UNAVAILABLE);
-    }
-    if (!isSecureElementPresent) {
-        LOG(ERROR) << "secure element not found";
-        eSEReader = nullptr;
-        return static_cast<keymaster_error_t>(KM_ERROR_HARDWARE_TYPE_UNAVAILABLE);
+        // Success! Check if SE is present
+        bool isSecureElementPresent = false;
+        auto res = eSEReader->isSecureElementPresent(&isSecureElementPresent);
+        if (!res.isOk()) {
+            eSEReader = nullptr;
+            LOG(ERROR) << "isSecureElementPresent error: " << res.getMessage();
+            std::this_thread::sleep_for(std::chrono::milliseconds(INIT_RETRY_DELAY));
+            continue;  // Retry
+        }
+
+        if (!isSecureElementPresent) {
+            LOG(ERROR) << "secure element not found";
+            eSEReader = nullptr;
+            std::this_thread::sleep_for(std::chrono::milliseconds(INIT_RETRY_DELAY));
+            continue;  // Retry
+        }
+
+        // All checks passed - initialization successful
+        LOG(INFO) << "SE initialization successful";
+        return KM_ERROR_OK;
     }
 
-    return KM_ERROR_OK;
+    // Exhausted all retries
+    LOG(ERROR) << "SE initialization failed after " << MAX_INIT_COUNT + 1 << " attempts";
+    return static_cast<keymaster_error_t>(KM_ERROR_HARDWARE_NOT_YET_AVAILABLE);
 }
 
 bool OmapiTransport::internalTransmitApdu(
