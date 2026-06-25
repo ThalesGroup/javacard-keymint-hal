@@ -44,6 +44,13 @@ ScopedAStatus JavacardKeyMintOperation::updateAad(const vector<uint8_t>& input,
 
     HardwareAuthToken aToken = authToken.value_or(HardwareAuthToken());
     TimeStampToken tToken = timestampToken.value_or(TimeStampToken());
+     // NEW: Store tokens if provided
+    if (!aToken.mac.empty()) {
+            storedAuthToken_ = aToken;
+    }
+    if (!tToken.mac.empty()) {
+            storedTimestampToken_ = tToken;
+    }
 
     for (size_t currentIndex = 0; currentIndex < input.size();) {
         size_t currentChunkSize = std::min(inputChunkSize, input.size() - currentIndex);
@@ -76,6 +83,14 @@ ScopedAStatus JavacardKeyMintOperation::update(const vector<uint8_t>& input,
                                                vector<uint8_t>* output) {
     HardwareAuthToken aToken = authToken.value_or(HardwareAuthToken());
     TimeStampToken tToken = timestampToken.value_or(TimeStampToken());
+    // NEW: Store tokens if provided
+    if (!aToken.mac.empty()) {
+        storedAuthToken_ = aToken;
+    }
+    if (!tToken.mac.empty()) {
+        storedTimestampToken_ = tToken;
+    }
+
     DataView view = {.buffer = {}, .data = input, .start = 0, .length = input.size()};
     keymaster_error_t err = bufferData(view);
     if (err != KM_ERROR_OK) {
@@ -102,7 +117,16 @@ ScopedAStatus JavacardKeyMintOperation::finish(const optional<vector<uint8_t>>& 
                                                const optional<vector<uint8_t>>& confirmationToken,
                                                vector<uint8_t>* output) {
     HardwareAuthToken aToken = authToken.value_or(HardwareAuthToken());
+    if (aToken.mac.empty() && !storedAuthToken_.mac.empty()) {
+        aToken = storedAuthToken_;
+    }
+
     TimeStampToken tToken = timestampToken.value_or(TimeStampToken());
+    if (tToken.mac.empty() && !storedTimestampToken_.mac.empty()) {
+        tToken = storedTimestampToken_;
+    }
+
+
     const vector<uint8_t> confToken = confirmationToken.value_or(vector<uint8_t>());
     const vector<uint8_t> inData = input.value_or(vector<uint8_t>());
     DataView view = {.buffer = {}, .data = inData, .start = 0, .length = inData.size()};
@@ -126,6 +150,7 @@ ScopedAStatus JavacardKeyMintOperation::finish(const optional<vector<uint8_t>>& 
         }
         appendBufferedData(view);
     }
+
     vector<uint8_t> remaining = popNextChunk(view, view.length);
     return km_utils::kmError2ScopedAStatus(
         sendFinish(remaining, sign, aToken, tToken, confToken, *output));
