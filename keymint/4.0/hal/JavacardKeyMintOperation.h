@@ -108,6 +108,9 @@ class JavacardKeyMintOperation : public BnKeyMintOperation {
 
     keymaster_error_t sendUpdate(const vector<uint8_t>& data, const HardwareAuthToken& authToken,
                                  const TimeStampToken& timestampToken, vector<uint8_t>& output);
+    // Store tokens for re-use in finish()
+    HardwareAuthToken storedAuthToken_;
+    TimeStampToken storedTimestampToken_;
 
     inline void appendBufferedData(DataView& view) {
         if (!buffer_.empty()) {
