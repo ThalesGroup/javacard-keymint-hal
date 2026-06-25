@@ -1,0 +1,12 @@
+service vendor.keymint-strongbox /vendor/bin/hw/android.hardware.security.keymint-service.strongbox-thales
+    class early_hal
+    user root
+    group root
+    seclabel u:r:su:s0
+
+on init
+  setprop ro.strongbox.manufacturer "Thales"
+  # Select appropriated model in below list and uncomment the corresponding line (and only one line)
+  #  setprop ro.strongbox.model "ST54L-CeSE-1.1"
+  #  setprop ro.strongbox.model "ST54L-CeSE-1.2"
+  #  setprop ro.strongbox.model "SE2A-TEQS-1.0"
