@@ -19,6 +19,7 @@
 
 #include <map>
 #include <string>
+#include <unordered_set>
 
 #include <android-base/logging.h>
 
@@ -34,6 +35,74 @@ using ::aidl::android::hardware::security::keymint::km_utils::typeFromTag;
 constexpr int SB_ENFORCED = 0;
 constexpr int TEE_ENFORCED = 1;
 constexpr int SW_ENFORCED = 2;
+
+std::unordered_set<keymaster_tag_t> validTags = {
+    KM_TAG_PURPOSE,
+    KM_TAG_ALGORITHM,
+    KM_TAG_KEY_SIZE,
+    KM_TAG_BLOCK_MODE,
+    KM_TAG_DIGEST,
+    KM_TAG_PADDING,
+    KM_TAG_CALLER_NONCE,
+    KM_TAG_MIN_MAC_LENGTH,
+    KM_TAG_EC_CURVE,
+    KM_TAG_RSA_PUBLIC_EXPONENT,
+    KM_TAG_INCLUDE_UNIQUE_ID,
+    KM_TAG_RSA_OAEP_MGF_DIGEST,
+    KM_TAG_BOOTLOADER_ONLY,
+    KM_TAG_ROLLBACK_RESISTANCE,
+    KM_TAG_EARLY_BOOT_ONLY,
+    KM_TAG_ACTIVE_DATETIME,
+    KM_TAG_ORIGINATION_EXPIRE_DATETIME,
+    KM_TAG_USAGE_EXPIRE_DATETIME,
+    KM_TAG_MIN_SECONDS_BETWEEN_OPS,
+    KM_TAG_MAX_USES_PER_BOOT,
+    KM_TAG_USAGE_COUNT_LIMIT,
+    KM_TAG_USER_ID,
+    KM_TAG_USER_SECURE_ID,
+    KM_TAG_NO_AUTH_REQUIRED,
+    KM_TAG_USER_AUTH_TYPE,
+    KM_TAG_AUTH_TIMEOUT,
+    KM_TAG_ALLOW_WHILE_ON_BODY,
+    KM_TAG_TRUSTED_USER_PRESENCE_REQUIRED,
+    KM_TAG_TRUSTED_CONFIRMATION_REQUIRED,
+    KM_TAG_UNLOCKED_DEVICE_REQUIRED,
+    KM_TAG_APPLICATION_ID,
+    KM_TAG_APPLICATION_DATA,
+    KM_TAG_CREATION_DATETIME,
+    KM_TAG_ORIGIN,
+    KM_TAG_ROOT_OF_TRUST,
+    KM_TAG_OS_VERSION,
+    KM_TAG_OS_PATCHLEVEL,
+    KM_TAG_UNIQUE_ID,
+    KM_TAG_ATTESTATION_CHALLENGE,
+    KM_TAG_ATTESTATION_APPLICATION_ID,
+    KM_TAG_ATTESTATION_ID_BRAND,
+    KM_TAG_ATTESTATION_ID_DEVICE,
+    KM_TAG_ATTESTATION_ID_PRODUCT,
+    KM_TAG_ATTESTATION_ID_SERIAL,
+    KM_TAG_ATTESTATION_ID_IMEI,
+    KM_TAG_ATTESTATION_ID_MEID,
+    KM_TAG_ATTESTATION_ID_MANUFACTURER,
+    KM_TAG_ATTESTATION_ID_MODEL,
+    KM_TAG_VENDOR_PATCHLEVEL,
+    KM_TAG_BOOT_PATCHLEVEL,
+    KM_TAG_DEVICE_UNIQUE_ATTESTATION,
+    KM_TAG_IDENTITY_CREDENTIAL_KEY,
+    KM_TAG_STORAGE_KEY,
+    KM_TAG_ATTESTATION_ID_SECOND_IMEI,
+    KM_TAG_MODULE_HASH,
+    KM_TAG_ASSOCIATED_DATA,
+    KM_TAG_NONCE,
+    KM_TAG_MAC_LENGTH,
+    KM_TAG_RESET_SINCE_ID_ROTATION,
+    KM_TAG_CONFIRMATION_TOKEN,
+    KM_TAG_CERTIFICATE_SERIAL,
+    KM_TAG_CERTIFICATE_SUBJECT,
+    KM_TAG_CERTIFICATE_NOT_BEFORE,
+    KM_TAG_CERTIFICATE_NOT_AFTER,
+    KM_TAG_MAX_BOOT_LEVEL,
+};
 
 namespace {
 
@@ -94,6 +163,10 @@ bool CborConverter::addKeyparameters(Array& array, const vector<KeyParameter>& k
     std::map<uint32_t, Array> uint_repetition;
     for (auto& param : keyParams) {
         auto tag = legacy_enum_conversion(param.tag);
+        if (!validTags.contains(tag)) {
+            // Ignore unknown tags
+            continue;
+        }
         switch (typeFromTag(tag)) {
         case KM_ENUM: {
             auto paramEnum = aidlEnumParam2Uint32(param);
