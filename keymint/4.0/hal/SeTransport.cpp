@@ -25,6 +25,8 @@
 #include <vector>
 #include <iomanip>
 #include <future>
+#include <chrono>
+#include <thread>
 
 #include <android-base/logging.h>
 #include <android-base/properties.h>
@@ -99,7 +101,6 @@ static uint8_t initCounter = 0;
 keymaster_error_t SeTransport::initialize() {
     std::vector<std::string> readers = {};
     LOG(DEBUG) << "Initialize the secure element connection";
-    initCounter = 0;
 
     sessionTimer.count = 0;
     LOG(INFO) << "Initialize the secure element connection";
@@ -114,21 +115,27 @@ keymaster_error_t SeTransport::initialize() {
         AID_SIZE = 9;
     }
 
-    do {
+    secure_element = nullptr;
+    for (initCounter = 0; initCounter <= MAX_INIT_COUNT; initCounter++) {
+        LOG(DEBUG) << "Initialization attempt " << (int)initCounter + 1 << "/" << MAX_INIT_COUNT + 1;
         secure_element = getSecureElementService();
-        if (secure_element == nullptr) {
-            LOG(ERROR) << "Failed to start SEHAL service null";
-            if(initCounter < MAX_INIT_COUNT) {
-                initCounter++;
-                usleep(INIT_RETRY_DELAY * 1000);
-                continue;
-            }
+
+        if (secure_element != nullptr) {
+            break;  // success
+        }
+
+        LOG(ERROR) << "Failed to start SEHAL service null";
+        if (initCounter == MAX_INIT_COUNT) {
             return static_cast<keymaster_error_t>(KM_ERROR_HARDWARE_NOT_YET_AVAILABLE);
         }
-    } while (initCounter > 0 && initCounter < MAX_INIT_COUNT+1);
+        std::this_thread::sleep_for(std::chrono::milliseconds(INIT_RETRY_DELAY));
+    }
+
+    if (secure_element == nullptr) {
+        return static_cast<keymaster_error_t>(KM_ERROR_HARDWARE_NOT_YET_AVAILABLE);
+    }
 
     int size = AID_SIZE;
-
     bool isSecureElementPresent = false;
     auto res = secure_element->isCardPresent(&isSecureElementPresent);
 
