@@ -37,7 +37,7 @@
 #include <binder/IBinder.h>
 #include <binder/IServiceManager.h>
 
-#define MAX_INIT_COUNT 15
+
 #define MAX_SEND_COUNT 5
 #define INIT_RETRY_DELAY 1000 //ms
 #include <aidl/android/hardware/secure_element/BnSecureElementCallback.h>
@@ -115,23 +115,10 @@ keymaster_error_t SeTransport::initialize() {
         AID_SIZE = 9;
     }
 
-    secure_element = nullptr;
-    for (initCounter = 0; initCounter <= MAX_INIT_COUNT; initCounter++) {
-        LOG(DEBUG) << "Initialization attempt " << (int)initCounter + 1 << "/" << MAX_INIT_COUNT + 1;
         secure_element = getSecureElementService();
 
-        if (secure_element != nullptr) {
-            break;  // success
-        }
-
+        if (secure_element == nullptr) {
         LOG(ERROR) << "Failed to start SEHAL service null";
-        if (initCounter == MAX_INIT_COUNT) {
-            return static_cast<keymaster_error_t>(KM_ERROR_HARDWARE_NOT_YET_AVAILABLE);
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(INIT_RETRY_DELAY));
-    }
-
-    if (secure_element == nullptr) {
         return static_cast<keymaster_error_t>(KM_ERROR_HARDWARE_NOT_YET_AVAILABLE);
     }
 
