@@ -46,7 +46,11 @@ cc_library {
         "JavacardSharedSecret.cpp",
         "keymint_utils.cpp",
     ],
-    cflags: ["-O0", "-DKM400_ASN1"],
+    cflags: [
+             "-O0",
+             "-DKM400_ASN1",
+             //"-DBUFFER_ATTEST_APDU"
+             ],
     shared_libs: [
         "android.hardware.security.keymint-V4-ndk",
         "android.hardware.security.secureclock-V1-ndk",
