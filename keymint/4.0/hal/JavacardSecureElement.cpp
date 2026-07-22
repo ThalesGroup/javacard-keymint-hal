@@ -85,6 +85,23 @@ void JavacardSecureElement::sendPendingEvents() {
         } else {
             LOG(ERROR) << "Error in sending earlyBootEnded.";
         }
+
+        #ifdef BUFFER_ATTEST_APDU
+        if (!pendingAttestationInfo.empty()) {
+            cppbor::Array request;
+            cbor_.addKeyparameters(request, pendingAttestationInfo);
+            LOG(DEBUG) << "Send pending setAdditionalAttestationInfo";
+            auto [item, err] =
+                sendRequest(Instruction::INS_SET_ATT_MODULE_INFO_CMD, request);
+            if (err != KM_ERROR_OK) {
+                LOG(ERROR) << "Error sending setAdditionalAttestationInfo.";
+            } else {
+                LOG(INFO) << "setAdditionalAttestationInfo success";
+            }
+            pendingAttestationInfo.clear();
+        }
+        #endif
+
     }
 }
 
@@ -218,5 +235,12 @@ JavacardSecureElement::sendRequest(Instruction ins) {
     // decode the response and send that back
     return cbor_.decodeData(response);
 }
+
+#ifdef BUFFER_ATTEST_APDU
+void JavacardSecureElement::storePendingAttestationInfo(const vector<KeyParameter>& keyParams) {
+    LOG(INFO) << "Store Pending Attestation Info";
+    pendingAttestationInfo = keyParams;
+}
+#endif
 
 }  // namespace keymint::javacard
