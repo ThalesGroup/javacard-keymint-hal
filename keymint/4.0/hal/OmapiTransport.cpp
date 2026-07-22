@@ -34,7 +34,6 @@
 #define ENABLE_SESSION_TIMEOUT
 #include "SessionTimer.h"
 
-#define MAX_INIT_COUNT 15
 #define MAX_SEND_COUNT 5
 #define INIT_RETRY_DELAY 1000 //ms
 #define PROP_KEYMINT_CLOSE_CHANNEL "vendor.keymint.closechannel"
@@ -74,15 +73,10 @@ keymaster_error_t OmapiTransport::initialize() {
         AID_SIZE = 9;
     }
 
-    for (initCounter = 0; initCounter <= MAX_INIT_COUNT; initCounter++) {
-        LOG(DEBUG) << "Initialization attempt " << (int)initCounter + 1 << "/" << MAX_INIT_COUNT + 1;
-
         LOG(DEBUG) << "Close all existing connection if any";
         closeConnection();
         readers.clear();
         mVSReaders.clear();  // Also clear the readers map
-
-        bool shouldRetry = false;
 
         // Get OMAPI vendor stable service handler
         ::ndk::SpAIBinder ks2Binder(AServiceManager_checkService(omapiServiceName));
@@ -90,16 +84,14 @@ keymaster_error_t OmapiTransport::initialize() {
 
         if (omapiSeService == nullptr) {
             LOG(ERROR) << "Failed to start omapiSeService null";
-            std::this_thread::sleep_for(std::chrono::milliseconds(INIT_RETRY_DELAY));
-            continue;  // Retry
+            return static_cast<keymaster_error_t>(KM_ERROR_HARDWARE_NOT_YET_AVAILABLE);
         }
 
         // Get available readers
         auto status = omapiSeService->getReaders(&readers);
         if (!status.isOk()) {
             LOG(ERROR) << "getReaders failed to get available readers: " << status.getMessage();
-            std::this_thread::sleep_for(std::chrono::milliseconds(INIT_RETRY_DELAY));
-            continue;  // Retry
+            return static_cast<keymaster_error_t>(KM_ERROR_HARDWARE_NOT_YET_AVAILABLE);
         }
 
     // Get SE readers handlers
@@ -109,15 +101,9 @@ keymaster_error_t OmapiTransport::initialize() {
             if (!status.isOk() || reader == nullptr) {
                 LOG(ERROR) << "getReader for " << readerName.c_str()
                            << " Failed: " << status.getMessage();
-                shouldRetry = true;
-                break;  // Break out of for loop, will retry do-while
+                return static_cast<keymaster_error_t>(KM_ERROR_HARDWARE_NOT_YET_AVAILABLE);
             }
             mVSReaders[readerName] = reader;
-        }
-
-        if (shouldRetry) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(INIT_RETRY_DELAY));
-            continue;  // Retry the main loop
         }
 
         // Find eSE reader, as of now assumption is only eSE available on device
@@ -135,8 +121,7 @@ keymaster_error_t OmapiTransport::initialize() {
 
         if (eSEReader == nullptr) {
             LOG(ERROR) << "secure element reader " << ESE_READER_PREFIX << " not found";
-            std::this_thread::sleep_for(std::chrono::milliseconds(INIT_RETRY_DELAY));
-            continue;  // Retry
+            return static_cast<keymaster_error_t>(KM_ERROR_HARDWARE_NOT_YET_AVAILABLE);
         }
 
         // Success! Check if SE is present
@@ -145,25 +130,18 @@ keymaster_error_t OmapiTransport::initialize() {
         if (!res.isOk()) {
             eSEReader = nullptr;
             LOG(ERROR) << "isSecureElementPresent error: " << res.getMessage();
-            std::this_thread::sleep_for(std::chrono::milliseconds(INIT_RETRY_DELAY));
-            continue;  // Retry
+            return static_cast<keymaster_error_t>(KM_ERROR_HARDWARE_NOT_YET_AVAILABLE);
         }
 
         if (!isSecureElementPresent) {
             LOG(ERROR) << "secure element not found";
             eSEReader = nullptr;
-            std::this_thread::sleep_for(std::chrono::milliseconds(INIT_RETRY_DELAY));
-            continue;  // Retry
+            return static_cast<keymaster_error_t>(KM_ERROR_HARDWARE_NOT_YET_AVAILABLE);
         }
 
         // All checks passed - initialization successful
         LOG(INFO) << "SE initialization successful";
         return KM_ERROR_OK;
-    }
-
-    // Exhausted all retries
-    LOG(ERROR) << "SE initialization failed after " << MAX_INIT_COUNT + 1 << " attempts";
-    return static_cast<keymaster_error_t>(KM_ERROR_HARDWARE_NOT_YET_AVAILABLE);
 }
 
 bool OmapiTransport::internalTransmitApdu(
