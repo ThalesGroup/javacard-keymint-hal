@@ -104,6 +104,10 @@ class JavacardSecureElement {
     void setEarlyBootEndedPending();
     void setDeleteAllKeysPending();
 
+#ifdef BUFFER_ATTEST_APDU
+    void storePendingAttestationInfo(const vector<KeyParameter>& keyParams);
+#endif
+
     inline uint16_t getApduStatus(std::vector<uint8_t>& inputData) {
         // Last two bytes are the status SW0SW1
         uint8_t SW0 = inputData.at(inputData.size() - 2);
@@ -117,5 +121,8 @@ class JavacardSecureElement {
     bool isDeleteAllKeysPending;
     bool isInitPending;
     CborConverter cbor_;
+#ifdef BUFFER_ATTEST_APDU
+    vector<KeyParameter> pendingAttestationInfo;
+#endif
 };
 }  // namespace keymint::javacard
