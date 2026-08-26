@@ -117,9 +117,6 @@ ScopedAStatus JavacardKeyMintOperation::finish(const optional<vector<uint8_t>>& 
             if (err != KM_ERROR_OK) {
                 return km_utils::kmError2ScopedAStatus(err);
             }
-            //Retrieve token value
-            aToken = authToken.value_or(HardwareAuthToken());
-            tToken = timestampToken.value_or(TimeStampToken());
         }
     } else {
         keymaster_error_t err = bufferData(view);
@@ -242,9 +239,6 @@ keymaster_error_t JavacardKeyMintOperation::updateInChunks(DataView& view,
         if (sendError != KM_ERROR_OK) {
             return sendError;
         }
-        // Clear tokens
-        if (!authToken.mac.empty()) authToken = HardwareAuthToken();
-        if (!timestampToken.mac.empty()) timestampToken = TimeStampToken();
     }
     return KM_ERROR_OK;
 }
