@@ -236,9 +236,6 @@ keymaster_error_t JavacardKeyMintOperation::updateInChunks(DataView& view,
         if (sendError != KM_ERROR_OK) {
             return sendError;
         }
-        // Clear tokens
-        if (!authToken.mac.empty()) authToken = HardwareAuthToken();
-        if (!timestampToken.mac.empty()) timestampToken = TimeStampToken();
     }
     return KM_ERROR_OK;
 }
