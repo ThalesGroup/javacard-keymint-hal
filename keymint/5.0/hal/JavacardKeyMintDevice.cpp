@@ -610,16 +610,20 @@ ScopedAStatus JavacardKeyMintDevice::setAdditionalAttestationInfo(const vector<K
     // add key params
     cbor_.addKeyparameters(request, info);
     auto [item, err] = card_->sendRequest(Instruction::INS_SET_ATT_MODULE_INFO_CMD, request);
-    if (err != KM_ERROR_OK) {
-        LOG(ERROR) << "Error in sending in setAdditionalAttestationInfo.";
-
-        #ifdef BUFFER_ATTEST_APDU
-            card_->storePendingAttestationInfo(info);
-        #else
-            return km_utils::kmError2ScopedAStatus(err);
-        #endif
+    if (err != KM_ERROR_OK) { 
+    
+    #ifdef BUFFER_ATTEST_APDU 
+      if (err != KM_ERROR_MODULE_HASH_ALREADY_SET){
+        LOG(ERROR) << "Save pending setAdditionalAttestationInfo request and continue.";
+        card_->storePendingAttestationInfo(info); 
+        return ScopedAStatus::ok(); 
+      } 
+      #endif 
+      
+      LOG(ERROR) << "Error in sending in setAdditionalAttestationInfo."; 
+      return km_utils::kmError2ScopedAStatus(err); 
     }
-    return ScopedAStatus::ok();
+      return ScopedAStatus::ok();
 }
 
 
