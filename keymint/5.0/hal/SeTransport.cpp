@@ -191,7 +191,13 @@ bool SeTransport::internalTransmitApdu(
             }
         }
 
-        cmd[0] |= channel_number;
+        int ext_channelNumber;
+        if (channel_number > 0x03) {
+          ext_channelNumber = 0x40 + (channel_number - 0x04);
+        } else {
+            ext_channelNumber = channel_number;
+        }
+        cmd[0] |= ext_channelNumber;
 
         res = secure_element_->transmit(cmd, &transmitResponse);
 
