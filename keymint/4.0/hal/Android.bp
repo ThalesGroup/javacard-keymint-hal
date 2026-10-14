@@ -36,7 +36,6 @@ cc_library {
     name: "libjc_keymint-thales",
     defaults: [
         "keymaster_defaults",
-
     ],
     srcs: [
         "CborConverter.cpp",
@@ -50,6 +49,7 @@ cc_library {
     cflags: [
              "-O0",
              "-DKM400_ASN1",
+             "-DOMAPI_TRANSPORT",
              //"-DBUFFER_ATTEST_APDU"
              ],
     shared_libs: [
@@ -80,18 +80,29 @@ cc_library {
     vendor_available: true,
     srcs: [
         "SocketTransport.cpp",
-       "OmapiTransport.cpp"
+        "OmapiTransport.cpp",
+       "SeTransport.cpp"
     ],
     export_include_dirs: [
         "."
     ],
+
+    cflags: [
+        "-DOMAPI_TRANSPORT",
+        "-Wno-unused-parameter",
+        "-Wno-unused-private-field",
+    ],
+
+
     shared_libs: [
         "libbinder",
         "libbase",
         "liblog",
         "libbinder_ndk",
         "android.se.omapi-V1-ndk",
-        "libhardware"
+        "libhardware",
+        "libcutils",
+        "android.hardware.secure_element-V1-ndk",
     ],
 }
 
@@ -108,6 +119,7 @@ cc_binary {
     cflags: [
         "-Wall",
         "-Wextra",
+        "-DOMAPI_TRANSPORT"
     ],
     shared_libs: [
         "android.hardware.security.keymint-V4-ndk",
@@ -124,6 +136,7 @@ cc_binary {
         "liblog",
         "libutils",
         "android.se.omapi-V1-ndk",
+        "android.hardware.secure_element-V1-ndk",
     ],
     srcs: [
         "service.cpp",

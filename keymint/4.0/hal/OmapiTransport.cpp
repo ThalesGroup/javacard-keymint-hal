@@ -41,20 +41,20 @@
 
 namespace keymint::javacard {
 
-uint8_t SELECTABLE_AID_THALES[] = {0xA0, 0x00, 0x00, 0x00, 0x18, 0x43, 0x43, 0x43, 0x43, 0x43, 0x42, 0x41, 0x01};
-uint8_t SELECTABLE_AID_GOOGLE[] = {0xA0, 0x00, 0x00, 0x08, 0x44, 0x00, 0x00, 0xAA, 0x01};
-uint8_t *KEYMINT_APPLET_AID;
-uint8_t AID_SIZE;
-//constexpr uint8_t KEYMINT_APPLET_AID[] = {0xA0, 0x00, 0x00, 0x00, 0x62, 0x03,
+uint8_t OMAPI_SELECTABLE_AID_THALES[] = {0xA0, 0x00, 0x00, 0x00, 0x18, 0x43, 0x43, 0x43, 0x43, 0x43, 0x42, 0x41, 0x01};
+uint8_t OMAPI_SELECTABLE_AID_GOOGLE[] = {0xA0, 0x00, 0x00, 0x08, 0x44, 0x00, 0x00, 0xAA, 0x01};
+uint8_t *OMAPI_KEYMINT_APPLET_AID;
+uint8_t OMAPI_AID_SIZE;
+//constexpr uint8_t OMAPI_KEYMINT_APPLET_AID[] = {0xA0, 0x00, 0x00, 0x00, 0x62, 0x03,
 //                                          0x02, 0x0C, 0x01, 0x01, 0x01};
-std::string const ESE_READER_PREFIX = "eSE";
+std::string const OMAPI_ESE_READER_PREFIX = "eSE";
 constexpr const char omapiServiceName[] =
         "android.se.omapi.ISecureElementService/default";
 
 class SEListener : public ::aidl::android::se::omapi::BnSecureElementListener {};
 
 #ifdef ENABLE_SESSION_TIMEOUT
-Timer sessionTimer;
+Timer omapiSessionTimer;
 #endif
 
 static uint8_t initCounter = 0;
@@ -62,15 +62,15 @@ keymaster_error_t OmapiTransport::initialize() {
     std::vector<std::string> readers = {};
     LOG(DEBUG) << "Initialize the secure element connection";
 
-    sessionTimer.count = 0;
+    omapiSessionTimer.count = 0;
     if(android::base::GetProperty(PROP_KEYMINT_VENDOR, "") != "Google") {
         LOG(DEBUG) << "Initialize the AID to be Thales";
-        KEYMINT_APPLET_AID = SELECTABLE_AID_THALES;
-        AID_SIZE = 13;
+        OMAPI_KEYMINT_APPLET_AID = OMAPI_SELECTABLE_AID_THALES;
+        OMAPI_AID_SIZE = 13;
     } else {
         LOG(DEBUG) << "Initialize the AID to be Google";
-        KEYMINT_APPLET_AID = SELECTABLE_AID_GOOGLE;
-        AID_SIZE = 9;
+        OMAPI_KEYMINT_APPLET_AID = OMAPI_SELECTABLE_AID_GOOGLE;
+        OMAPI_AID_SIZE = 9;
     }
 
         LOG(DEBUG) << "Close all existing connection if any";
@@ -111,7 +111,7 @@ keymaster_error_t OmapiTransport::initialize() {
         eSEReader = nullptr;
         if (mVSReaders.size() > 0) {
             for (const auto& [name, reader] : mVSReaders) {
-                if (name.find(ESE_READER_PREFIX, 0) != std::string::npos) {
+                if (name.find(OMAPI_ESE_READER_PREFIX, 0) != std::string::npos) {
                     LOG(DEBUG) << "eSE reader found: " << name;
                     eSEReader = reader;
                     break;
@@ -120,7 +120,7 @@ keymaster_error_t OmapiTransport::initialize() {
         }
 
         if (eSEReader == nullptr) {
-            LOG(ERROR) << "secure element reader " << ESE_READER_PREFIX << " not found";
+            LOG(ERROR) << "secure element reader " << OMAPI_ESE_READER_PREFIX << " not found";
             return static_cast<keymaster_error_t>(KM_ERROR_HARDWARE_NOT_YET_AVAILABLE);
         }
 
@@ -156,7 +156,7 @@ bool OmapiTransport::internalTransmitApdu(
 #ifdef ENABLE_SESSION_TIMEOUT
         // Stop the timer
         LOG(DEBUG) << "Stop timeout if any.";
-        sessionTimer.stop();
+        omapiSessionTimer.stop();
 #endif
 
         if (reader == nullptr) {
@@ -194,8 +194,8 @@ bool OmapiTransport::internalTransmitApdu(
             }
         }
 
-        int size = AID_SIZE;
-        std::vector<uint8_t> aid(KEYMINT_APPLET_AID, KEYMINT_APPLET_AID + size);
+        int size = OMAPI_AID_SIZE;
+        std::vector<uint8_t> aid(OMAPI_KEYMINT_APPLET_AID, OMAPI_KEYMINT_APPLET_AID + size);
         if (result) {
             auto mSEListener = ndk::SharedRefBase::make<SEListener>();
             res = session->openLogicalChannel(aid, 0x00, mSEListener, &channel);
@@ -236,14 +236,14 @@ bool OmapiTransport::internalTransmitApdu(
 #ifdef ENABLE_SESSION_TIMEOUT
         LOG(DEBUG) << "Start timeout before closing channels ";
         if ( apdu.size() > 2 && apdu.at(1) == 0x30 ) {
-            sessionTimer.count++;
+            omapiSessionTimer.count++;
         } else if ( apdu.size() > 2 && ( apdu.at(1) == 0x32 || apdu.at(1) == 0x33) ) {
-            sessionTimer.count--;
+            omapiSessionTimer.count--;
         }
-        if ( sessionTimer.count > 0 ) {
-            sessionTimer.start(SESSION_TIMEOUT_300S, this);
+        if ( omapiSessionTimer.count > 0 ) {
+            omapiSessionTimer.start(SESSION_TIMEOUT_300S, this);
         } else {
-            sessionTimer.start(SESSION_TIMEOUT_20S, this);
+            omapiSessionTimer.start(SESSION_TIMEOUT_20S, this);
         }
 #endif
 
@@ -275,7 +275,7 @@ keymaster_error_t OmapiTransport::sendData(const vector<uint8_t>& inData, vector
     }
 
     if (eSEReader != nullptr) {
-        LOG(DEBUG) << "Sending apdu data to secure element: " << ESE_READER_PREFIX;
+        LOG(DEBUG) << "Sending apdu data to secure element: " << OMAPI_ESE_READER_PREFIX;
         if(internalTransmitApdu(eSEReader, inData, output)) {
             if(android::base::GetBoolProperty(PROP_KEYMINT_CLOSE_CHANNEL, false))
                 closeConnection();
@@ -285,7 +285,7 @@ keymaster_error_t OmapiTransport::sendData(const vector<uint8_t>& inData, vector
             return KM_ERROR_SECURE_HW_COMMUNICATION_FAILED;
         }
     } else {
-        LOG(ERROR) << "secure element reader " << ESE_READER_PREFIX << " not found";
+        LOG(ERROR) << "secure element reader " << OMAPI_ESE_READER_PREFIX << " not found";
         return KM_ERROR_SECURE_HW_COMMUNICATION_FAILED;
     }
 }

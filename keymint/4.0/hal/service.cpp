@@ -27,6 +27,7 @@
 #include "JavacardRemotelyProvisionedComponentDevice.h"
 #include "JavacardSecureElement.h"
 #include "JavacardSharedSecret.h"
+#include "SeTransport.h"
 #include "OmapiTransport.h"
 #include "SocketTransport.h"
 #include "keymint_utils.h"
@@ -40,7 +41,7 @@ using keymint::javacard::getOsVersion;
 using keymint::javacard::getVendorPatchlevel;
 using keymint::javacard::ITransport;
 using keymint::javacard::JavacardSecureElement;
-using keymint::javacard::OmapiTransport;
+using keymint::javacard::SeTransport;
 using keymint::javacard::SocketTransport;
 
 #define PROP_BUILD_QEMU "ro.kernel.qemu"
@@ -72,7 +73,11 @@ std::shared_ptr<ITransport> getTransportInstance() {
     }
 
     if (!isEmulator) {
-        return std::make_shared<OmapiTransport>();
+        #ifdef OMAPI_TRANSPORT
+            return std::make_shared<keymint::javacard::OmapiTransport>();
+        #else
+            return std::make_shared<SeTransport>();
+        #endif
     } else {
         return std::make_shared<SocketTransport>();
     }

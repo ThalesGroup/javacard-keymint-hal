@@ -5,6 +5,11 @@
 #include <time.h>
 #include <unistd.h>
 #include <atomic>
+#ifdef OMAPI_TRANSPORT
+#include "OmapiTransport.h"
+#else
+#include "SeTransport.h"
+#endif
 
 class Timer {
 public:
@@ -63,7 +68,11 @@ private:
 
     // Static callback function required by timer_create
     static void timerCallback(sigval sv) {
-        keymint::javacard::OmapiTransport *transport = (keymint::javacard::OmapiTransport*)sv.sival_ptr;
+        #ifdef OMAPI_TRANSPORT
+          keymint::javacard::OmapiTransport *transport = (keymint::javacard::OmapiTransport*)sv.sival_ptr;
+        #else
+          keymint::javacard::SeTransport *transport = (keymint::javacard::SeTransport*)sv.sival_ptr;
+        #endif
         if (transport != nullptr) {
             transport->closeConnection();
         }
