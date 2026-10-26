@@ -180,6 +180,10 @@ ScopedAStatus JavacardRemotelyProvisionedComponentDevice::updateMacedKey(
             return km_utils::kmError2ScopedAStatus(translateRkpErrorCode(err));
         }
         auto coseKeyData = cbor_.getByteArrayVec(item, 1);
+        if (!coseKeyData) {
+            LOG(ERROR) << "Error in decoding coseKey in updateMacedKey.";
+            return km_utils::kmError2ScopedAStatus(KM_ERROR_UNKNOWN_ERROR);
+        }
         coseKeys.add(EncodedItem(coseKeyData.value()));
     }
     return ScopedAStatus::ok();
@@ -243,7 +247,7 @@ JavacardRemotelyProvisionedComponentDevice::getUdsCertsChain(std::vector<uint8_t
         auto optUdsCertData = cbor_.getByteArrayVec(item, 1);
         auto optRespFlag = cbor_.getUint64(item, 2);
         if (!optUdsCertData || !optRespFlag) {
-            LOG(ERROR) << "Error in decoding og response in getUdsCertsChain.";
+            LOG(ERROR) << "Error in decoding of response in getUdsCertsChain.";
             return km_utils::kmError2ScopedAStatus(KM_ERROR_UNKNOWN_ERROR);
         }
         respFlag = optRespFlag.value();
@@ -261,10 +265,10 @@ ScopedAStatus JavacardRemotelyProvisionedComponentDevice::generateCertificateReq
 ScopedAStatus JavacardRemotelyProvisionedComponentDevice::generateCertificateRequestV2(
     const std::vector<MacedPublicKey>& keysToSign, const std::vector<uint8_t>& challenge,
     std::vector<uint8_t>* csr) {
-    uint32_t version;
-    uint32_t csrPayloadSchemaVersion;
+    uint32_t version = 0;
+    uint32_t csrPayloadSchemaVersion = 0;
     std::string certificateType;
-    uint32_t respFlag;
+    uint32_t respFlag = 0;
     DeviceInfo deviceInfo;
     Array coseKeys;
     std::vector<uint8_t> protectedHeader;

@@ -30,6 +30,29 @@ using cppbor::Bstr;
 using cppbor::Uint;
 using secureclock::TimeStampToken;
 
+//////////////////////////////////////
+// Log API begin/end
+class JavacardKeyMintOperationApiMonitoring
+{
+    private:
+        std::string apiName_;
+
+    public:
+        JavacardKeyMintOperationApiMonitoring( const std::string& apiName)
+            : apiName_(apiName)
+        {
+            LOG(DEBUG) << "JavacardKeyMintOperation API ++" << apiName_;
+        }
+
+        ~JavacardKeyMintOperationApiMonitoring()
+        {
+            LOG(DEBUG) << "JavacardKeyMintOperation API --" << apiName_;
+        }
+
+        JavacardKeyMintOperationApiMonitoring(const JavacardKeyMintOperationApiMonitoring&) = delete;
+        JavacardKeyMintOperationApiMonitoring& operator=(const JavacardKeyMintOperationApiMonitoring&) = delete;
+};
+
 JavacardKeyMintOperation::~JavacardKeyMintOperation() {
     if (opHandle_ != 0) {
         JavacardKeyMintOperation::abort();
@@ -39,6 +62,8 @@ JavacardKeyMintOperation::~JavacardKeyMintOperation() {
 ScopedAStatus JavacardKeyMintOperation::updateAad(const vector<uint8_t>& input,
                                                   const optional<HardwareAuthToken>& authToken,
                                                   const optional<TimeStampToken>& timestampToken) {
+	const JavacardKeyMintOperationApiMonitoring apiMonitoring(__func__);
+
     const size_t inputChunkSize = MAX_CHUNK_SIZE;
     size_t currentIndex = 0;
 
@@ -74,6 +99,8 @@ ScopedAStatus JavacardKeyMintOperation::update(const vector<uint8_t>& input,
                                                const optional<HardwareAuthToken>& authToken,
                                                const optional<TimeStampToken>& timestampToken,
                                                vector<uint8_t>* output) {
+	const JavacardKeyMintOperationApiMonitoring apiMonitoring(__func__);
+
     HardwareAuthToken aToken = authToken.value_or(HardwareAuthToken());
     TimeStampToken tToken = timestampToken.value_or(TimeStampToken());
 
@@ -102,6 +129,8 @@ ScopedAStatus JavacardKeyMintOperation::finish(const optional<vector<uint8_t>>& 
                                                const optional<TimeStampToken>& timestampToken,
                                                const optional<vector<uint8_t>>& confirmationToken,
                                                vector<uint8_t>* output) {
+	const JavacardKeyMintOperationApiMonitoring apiMonitoring(__func__);
+
     HardwareAuthToken aToken = authToken.value_or(HardwareAuthToken());
     TimeStampToken tToken = timestampToken.value_or(TimeStampToken());
 
@@ -132,6 +161,8 @@ ScopedAStatus JavacardKeyMintOperation::finish(const optional<vector<uint8_t>>& 
 }
 
 ScopedAStatus JavacardKeyMintOperation::abort() {
+	const JavacardKeyMintOperationApiMonitoring apiMonitoring(__func__);
+
     Array request;
     request.add(Uint(opHandle_));
     auto [item, err] = card_->sendRequest(Instruction::INS_ABORT_OPERATION_CMD, request);

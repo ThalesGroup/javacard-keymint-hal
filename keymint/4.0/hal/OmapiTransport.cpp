@@ -31,9 +31,6 @@
 #include <android-base/logging.h>
 #include <android-base/properties.h>
 
-#define ENABLE_SESSION_TIMEOUT
-#include "SessionTimer.h"
-
 #define MAX_SEND_COUNT 5
 #define INIT_RETRY_DELAY 1000 //ms
 #define PROP_KEYMINT_CLOSE_CHANNEL "vendor.keymint.closechannel"
@@ -53,16 +50,12 @@ constexpr const char omapiServiceName[] =
 
 class SEListener : public ::aidl::android::se::omapi::BnSecureElementListener {};
 
-#ifdef ENABLE_SESSION_TIMEOUT
-Timer omapiSessionTimer;
-#endif
-
 static uint8_t initCounter = 0;
 keymaster_error_t OmapiTransport::initialize() {
     std::vector<std::string> readers = {};
     LOG(DEBUG) << "Initialize the secure element connection";
 
-    omapiSessionTimer.count = 0;
+    sessionCount = 0;
     if(android::base::GetProperty(PROP_KEYMINT_VENDOR, "") != "Google") {
         LOG(DEBUG) << "Initialize the AID to be Thales";
         OMAPI_KEYMINT_APPLET_AID = OMAPI_SELECTABLE_AID_THALES;
@@ -141,6 +134,10 @@ keymaster_error_t OmapiTransport::initialize() {
 
         // All checks passed - initialization successful
         LOG(INFO) << "SE initialization successful";
+        
+        #ifdef ENABLE_SESSION_TIMEOUT
+            omapiSessionTimer.init(this);
+        #endif
         return KM_ERROR_OK;
 }
 
@@ -226,26 +223,28 @@ bool OmapiTransport::internalTransmitApdu(
 
         res = channel->transmit(apdu, &transmitResponse);
 
-        LOG(INFO) << "STATUS OF TRNSMIT: " << res.getExceptionCode()
+        LOG(INFO) << "STATUS OF TRANSMIT: " << res.getExceptionCode()
                   << " Message: " << res.getMessage();
-        if (!res.isOk()) {
-            LOG(ERROR) << "transmit error: " << res.getMessage();
-            return false;
-        }
 
 #ifdef ENABLE_SESSION_TIMEOUT
         LOG(DEBUG) << "Start timeout before closing channels ";
         if ( apdu.size() > 2 && apdu.at(1) == 0x30 ) {
-            omapiSessionTimer.count++;
+            sessionCount++;
         } else if ( apdu.size() > 2 && ( apdu.at(1) == 0x32 || apdu.at(1) == 0x33) ) {
-            omapiSessionTimer.count--;
+            if (sessionCount >= 1)
+                sessionCount--;
         }
-        if ( omapiSessionTimer.count > 0 ) {
-            omapiSessionTimer.start(SESSION_TIMEOUT_300S, this);
+        if ( sessionCount > 0 ) {
+            omapiSessionTimer.start(SESSION_TIMEOUT_300S);
         } else {
-            omapiSessionTimer.start(SESSION_TIMEOUT_20S, this);
+            omapiSessionTimer.start(SESSION_TIMEOUT_20S);
         }
 #endif
+
+        if (!res.isOk()) {
+            LOG(ERROR) << "transmit error: " << res.getMessage();
+            return false;
+        }
 
         return true;
     });
@@ -293,24 +292,57 @@ keymaster_error_t OmapiTransport::sendData(const vector<uint8_t>& inData, vector
 keymaster_error_t OmapiTransport::closeConnection() {
     std::future<keymaster_error_t> result = std::async(std::launch::async, [this]() {
         std::lock_guard<std::mutex> lock(connectionMutex);
+#ifdef ENABLE_SESSION_TIMEOUT
+        omapiSessionTimer.stop();
+#endif
         LOG(DEBUG) << "Closing all connections";
-        if (channel != nullptr) channel->close();
-        if (session != nullptr) session->close();
+        if (channel != nullptr && !channel->close().isOk())
+            LOG(WARNING) << "Failed to close channel";
+        if (session != nullptr && !session->close().isOk())
+            LOG(WARNING) << "Failed to close session";
         if (omapiSeService != nullptr) {
             if (mVSReaders.size() > 0) {
                 for (const auto& [name, reader] : mVSReaders) {
-                    reader->closeSessions();
+                    if (!reader->closeSessions().isOk())
+                        LOG(WARNING) << "Failed to close sessions for reader: " << name;
                 }
                 mVSReaders.clear();
             }
         }
-        omapiSeService = nullptr;
-        eSEReader = nullptr;
-        session = nullptr;
+        // Release SE Callback references first (channel/session/reader): SE HAL dead detection
+        // removes its references to these objects before releasing the service
         channel = nullptr;
+        session = nullptr;
+        eSEReader = nullptr;
+        // Then release SE Service
+        omapiSeService = nullptr;
         return KM_ERROR_OK;
     });
     return result.get();
+}
+
+bool OmapiTransport::tryCloseConnection() {
+    std::unique_lock<std::mutex> lock(connectionMutex, std::try_to_lock);
+    if (!lock.owns_lock()) {
+        LOG(ERROR) << "OmapiTransport::tryCloseConnection: mutex busy";
+        return false;
+    }
+    if (channel != nullptr) channel->close();
+    if (session != nullptr) session->close();
+    if (omapiSeService != nullptr) {
+        for (const auto& [name, reader] : mVSReaders) {
+            reader->closeSessions();
+        }
+        mVSReaders.clear();
+    }
+    // Release SE Callback references first (channel/session/reader): SE HAL dead detection
+    // removes its references to these objects before releasing the service
+    channel = nullptr;
+    session = nullptr;
+    eSEReader = nullptr;
+    // Then release SE Service
+    omapiSeService = nullptr;
+    return true;
 }
 
 bool OmapiTransport::isConnected() {

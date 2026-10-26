@@ -35,6 +35,7 @@ using ::aidl::android::hardware::security::keymint::km_utils::typeFromTag;
 constexpr int SB_ENFORCED = 0;
 constexpr int TEE_ENFORCED = 1;
 constexpr int SW_ENFORCED = 2;
+
 std::unordered_set<keymaster_tag_t> validTags = {
     KM_TAG_PURPOSE,
     KM_TAG_ALGORITHM,
@@ -162,7 +163,7 @@ bool CborConverter::addKeyparameters(Array& array, const vector<KeyParameter>& k
     std::map<uint32_t, Array> uint_repetition;
     for (auto& param : keyParams) {
         auto tag = legacy_enum_conversion(param.tag);
-         if (!validTags.contains(tag)) {
+        if (!validTags.contains(tag)) {
             // Ignore unknown tags
             continue;
         }

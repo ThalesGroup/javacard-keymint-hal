@@ -15,15 +15,13 @@
 
 package {
     default_applicable_licenses: [
-        "external_libese_ready_se_google_keymint_KM300_HAL_license",
+        "vendor_thales_keymint_hal_license",
     ],
 }
 
-// Added automatically by a large-scale-change
-// See: http://go/android-license-faq
 license {
-    name: "external_libese_ready_se_google_keymint_KM300_HAL_license",
-    visibility: [":__subpackages__","//external/libese/ready_se/google/keymint/KM300/HAL"],
+    name: "vendor_thales_keymint_hal_license",
+    visibility: [":__subpackages__"],
     license_kinds: [
         "SPDX-license-identifier-Apache-2.0",
     ],
@@ -119,7 +117,8 @@ cc_binary {
     cflags: [
         "-Wall",
         "-Wextra",
-        "-DOMAPI_TRANSPORT"
+        "-DOMAPI_TRANSPORT",
+        //"-DBUFFER_ATTEST_APDU",
     ],
     shared_libs: [
         "android.hardware.security.keymint-V4-ndk",

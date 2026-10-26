@@ -55,6 +55,30 @@ constexpr uint32_t TAG_SEQUENCE = 0x30;
 constexpr uint32_t LENGTH_MASK = 0x80;
 constexpr uint32_t LENGTH_VALUE_MASK = 0x7F;
 
+
+//////////////////////////////////////
+// Log API begin/end
+class JavacardKeyMintDeviceApiMonitoring
+{
+    private:
+        std::string apiName_;
+
+    public:
+        JavacardKeyMintDeviceApiMonitoring( const std::string& apiName)
+            : apiName_(apiName)
+        {
+            LOG(DEBUG) << "JavacardKeyMintDevice API ++" << apiName_;
+        }
+
+        ~JavacardKeyMintDeviceApiMonitoring()
+        {
+            LOG(DEBUG) << "JavacardKeyMintDevice API --" << apiName_;
+        }
+
+        JavacardKeyMintDeviceApiMonitoring(const JavacardKeyMintDeviceApiMonitoring&) = delete;
+        JavacardKeyMintDeviceApiMonitoring& operator=(const JavacardKeyMintDeviceApiMonitoring&) = delete;
+};
+
 keymaster_error_t
 getCertificateChain(std::vector<uint8_t>& chainBuffer, std::vector<Certificate>& certChain);
 
@@ -68,6 +92,8 @@ ScopedAStatus JavacardKeyMintDevice::defaultHwInfo(KeyMintHardwareInfo* info) {
 }
 
 ScopedAStatus JavacardKeyMintDevice::getHardwareInfo(KeyMintHardwareInfo* info) {
+    const JavacardKeyMintDeviceApiMonitoring apiMonitoring(__func__);
+
     auto [item, err] = card_->sendRequest(Instruction::INS_GET_HW_INFO_CMD);
     std::optional<string> optKeyMintName;
     std::optional<string> optKeyMintAuthorName;
@@ -94,6 +120,8 @@ ScopedAStatus JavacardKeyMintDevice::getHardwareInfo(KeyMintHardwareInfo* info) 
 ScopedAStatus JavacardKeyMintDevice::generateKey(const vector<KeyParameter>& keyParams,
                                                  const optional<AttestationKey>& attestationKey,
                                                  KeyCreationResult* creationResult) {
+    const JavacardKeyMintDeviceApiMonitoring apiMonitoring(__func__);
+    
     card_->sendPendingEvents();
     cppbor::Array array;
     // add key params
@@ -109,7 +137,7 @@ ScopedAStatus JavacardKeyMintDevice::generateKey(const vector<KeyParameter>& key
     auto optKeyChars = cbor_.getKeyCharacteristics(item, 2);
     auto optCertChain = cbor_.getCertificateChain(item, 3);
     if (!optKeyBlob || !optKeyChars || !optCertChain) {
-        LOG(ERROR) << "Error in decoding og response in generateKey.";
+        LOG(ERROR) << "Error in decoding of response in generateKey.";
         return km_utils::kmError2ScopedAStatus(KM_ERROR_UNKNOWN_ERROR);
     }
     creationResult->keyCharacteristics = std::move(optKeyChars.value());
@@ -127,6 +155,8 @@ ScopedAStatus JavacardKeyMintDevice::generateKey(const vector<KeyParameter>& key
 }
 
 ScopedAStatus JavacardKeyMintDevice::addRngEntropy(const vector<uint8_t>& data) {
+    const JavacardKeyMintDeviceApiMonitoring apiMonitoring(__func__);
+
     cppbor::Array request;
     // add key data
     request.add(Bstr(data));
@@ -142,6 +172,7 @@ ScopedAStatus JavacardKeyMintDevice::importKey(const vector<KeyParameter>& keyPa
                                                KeyFormat keyFormat, const vector<uint8_t>& keyData,
                                                const optional<AttestationKey>& attestationKey,
                                                KeyCreationResult* creationResult) {
+    const JavacardKeyMintDeviceApiMonitoring apiMonitoring(__func__);
 
     card_->sendPendingEvents();
     cppbor::Array request;
@@ -187,6 +218,8 @@ ScopedAStatus JavacardKeyMintDevice::importWrappedKey(const vector<uint8_t>& wra
                                                       const vector<KeyParameter>& unwrappingParams,
                                                       int64_t passwordSid, int64_t biometricSid,
                                                       KeyCreationResult* creationResult) {
+    const JavacardKeyMintDeviceApiMonitoring apiMonitoring(__func__);
+
     card_->sendPendingEvents();
     cppbor::Array request;
     std::unique_ptr<Item> item;
@@ -207,7 +240,7 @@ ScopedAStatus JavacardKeyMintDevice::importWrappedKey(const vector<uint8_t>& wra
         LOG(ERROR) << "Error in parse wrapped key in importWrappedKey.";
         return km_utils::kmError2ScopedAStatus(errorCode);
 	}
-		
+        
     #ifdef KM400_ASN1
     #else
 
@@ -234,9 +267,8 @@ ScopedAStatus JavacardKeyMintDevice::importWrappedKey(const vector<uint8_t>& wra
                 KeyParameterValue::make<KeyParameterValue::Tag::longInteger>(biometricSid)
             );
         }
-      }
-     #endif
-    
+    }
+    #endif
 
     // begin import
     std::tie(item, errorCode) =
@@ -302,6 +334,8 @@ JavacardKeyMintDevice::sendFinishImportWrappedKeyCmd(
 ScopedAStatus JavacardKeyMintDevice::upgradeKey(const vector<uint8_t>& keyBlobToUpgrade,
                                                 const vector<KeyParameter>& upgradeParams,
                                                 vector<uint8_t>* keyBlob) {
+    const JavacardKeyMintDeviceApiMonitoring apiMonitoring(__func__);
+
     card_->sendPendingEvents();
     cppbor::Array request;
     // add key blob
@@ -323,6 +357,8 @@ ScopedAStatus JavacardKeyMintDevice::upgradeKey(const vector<uint8_t>& keyBlobTo
 }
 
 ScopedAStatus JavacardKeyMintDevice::deleteKey(const vector<uint8_t>& keyBlob) {
+    const JavacardKeyMintDeviceApiMonitoring apiMonitoring(__func__);
+
     Array request;
     request.add(Bstr(keyBlob));
     auto [item, err] = card_->sendRequest(Instruction::INS_DELETE_KEY_CMD, request);
@@ -334,6 +370,8 @@ ScopedAStatus JavacardKeyMintDevice::deleteKey(const vector<uint8_t>& keyBlob) {
 }
 
 ScopedAStatus JavacardKeyMintDevice::deleteAllKeys() {
+    const JavacardKeyMintDeviceApiMonitoring apiMonitoring(__func__);
+
     auto [_, err] = card_->sendRequest(Instruction::INS_DELETE_ALL_KEYS_CMD);
     if (err != KM_ERROR_OK) {
         LOG(ERROR) << "Error in sending deleteAllKeys.";
@@ -344,6 +382,8 @@ ScopedAStatus JavacardKeyMintDevice::deleteAllKeys() {
 }
 
 ScopedAStatus JavacardKeyMintDevice::destroyAttestationIds() {
+    const JavacardKeyMintDeviceApiMonitoring apiMonitoring(__func__);
+
     auto [item, err] = card_->sendRequest(Instruction::INS_DESTROY_ATT_IDS_CMD);
     if (err != KM_ERROR_OK) {
         LOG(ERROR) << "Error in sending in destroyAttestationIds.";
@@ -356,6 +396,8 @@ ScopedAStatus JavacardKeyMintDevice::begin(KeyPurpose purpose, const std::vector
                                            const std::vector<KeyParameter>& params,
                                            const std::optional<HardwareAuthToken>& authToken,
                                            BeginResult* result) {
+    const JavacardKeyMintDeviceApiMonitoring apiMonitoring(__func__);
+
     card_->sendPendingEvents();
     cppbor::Array array;
     std::vector<uint8_t> response;
@@ -392,6 +434,8 @@ ScopedAStatus JavacardKeyMintDevice::begin(KeyPurpose purpose, const std::vector
 ScopedAStatus
 JavacardKeyMintDevice::deviceLocked(bool passwordOnly,
                                     const std::optional<TimeStampToken>& timestampToken) {
+    const JavacardKeyMintDeviceApiMonitoring apiMonitoring(__func__);
+
     Array request;
     int8_t password = 1;
     if (!passwordOnly) {
@@ -407,6 +451,8 @@ JavacardKeyMintDevice::deviceLocked(bool passwordOnly,
 }
 
 ScopedAStatus JavacardKeyMintDevice::earlyBootEnded() {
+    const JavacardKeyMintDeviceApiMonitoring apiMonitoring(__func__);
+
     auto [_, err] = card_->sendRequest(Instruction::INS_EARLY_BOOT_ENDED_CMD);
     if (err != KM_ERROR_OK) {
         LOG(ERROR) << "Error in sending earlyBootEnded.";
@@ -417,8 +463,10 @@ ScopedAStatus JavacardKeyMintDevice::earlyBootEnded() {
 }
 
 ScopedAStatus JavacardKeyMintDevice::getKeyCharacteristics(
-    const std::vector<uint8_t>& keyBlob, const std::vector<uint8_t>& appId,
-    const std::vector<uint8_t>& appData, std::vector<KeyCharacteristics>* result) {
+            const std::vector<uint8_t>& keyBlob, const std::vector<uint8_t>& appId,
+            const std::vector<uint8_t>& appData, std::vector<KeyCharacteristics>* result) {
+    const JavacardKeyMintDeviceApiMonitoring apiMonitoring(__func__);
+
     card_->sendPendingEvents();
     cppbor::Array request;
     request.add(vector<uint8_t>(keyBlob));
@@ -431,7 +479,7 @@ ScopedAStatus JavacardKeyMintDevice::getKeyCharacteristics(
     }
     auto optKeyChars = cbor_.getKeyCharacteristics(item, 1);
     if (!optKeyChars) {
-        LOG(ERROR) << "Error in sending in upgradeKey.";
+        LOG(ERROR) << "Error in sending in getKeyCharacteristics.";
         return km_utils::kmError2ScopedAStatus(KM_ERROR_UNKNOWN_ERROR);
     }
     *result = std::move(optKeyChars.value());
@@ -466,12 +514,11 @@ JavacardKeyMintDevice::parseWrappedKey(const vector<uint8_t>& wrappedKeyData,
     transitKey = km_utils::kmBlob2vector(kmTransitKey);
     secureKey = km_utils::kmBlob2vector(kmSecureKey);
     tag = km_utils::kmBlob2vector(kmTag);
-	
-	#ifdef KM400_ASN1
+    #ifdef KM400_ASN1
     #else
     authList = km_utils::kmParamSet2Aidl(authSet);
     keyFormat = static_cast<KeyFormat>(kmKeyFormat);
-	#endif
+    #endif
     wrappedKeyDescription = km_utils::kmBlob2vector(kmWrappedKeyDescription);
     return KM_ERROR_OK;
 }
@@ -483,6 +530,8 @@ ScopedAStatus JavacardKeyMintDevice::convertStorageKeyToEphemeral(
 }
 
 ScopedAStatus JavacardKeyMintDevice::getRootOfTrustChallenge(array<uint8_t, 16>* challenge) {
+    const JavacardKeyMintDeviceApiMonitoring apiMonitoring(__func__);
+
     if(!GOOGLE_API)
         return km_utils::kmError2ScopedAStatus(KM_ERROR_UNIMPLEMENTED);
 
@@ -492,7 +541,7 @@ ScopedAStatus JavacardKeyMintDevice::getRootOfTrustChallenge(array<uint8_t, 16>*
         return km_utils::kmError2ScopedAStatus(err);
     }
     auto optChallenge = cbor_.getByteArrayVec(item, 1);
-    if (!optChallenge) {
+    if (!optChallenge || optChallenge->size() < 16) {
         LOG(ERROR) << "Error in sending in upgradeKey.";
         return km_utils::kmError2ScopedAStatus(KM_ERROR_UNKNOWN_ERROR);
     }
@@ -502,10 +551,14 @@ ScopedAStatus JavacardKeyMintDevice::getRootOfTrustChallenge(array<uint8_t, 16>*
 
 ScopedAStatus JavacardKeyMintDevice::getRootOfTrust(const array<uint8_t, 16>& /*challenge*/,
                                                     vector<uint8_t>* /*rootOfTrust*/) {
+    const JavacardKeyMintDeviceApiMonitoring apiMonitoring(__func__);
+
     return km_utils::kmError2ScopedAStatus(KM_ERROR_UNIMPLEMENTED);
 }
 
 ScopedAStatus JavacardKeyMintDevice::sendRootOfTrust(const vector<uint8_t>& rootOfTrust) {
+    const JavacardKeyMintDeviceApiMonitoring apiMonitoring(__func__);
+
     if(!GOOGLE_API)
         return km_utils::kmError2ScopedAStatus(KM_ERROR_UNIMPLEMENTED);
     cppbor::Array request;
@@ -557,14 +610,16 @@ JavacardKeyMintDevice::isFactoryAttestationCertMode(const vector<KeyParameter>& 
 keymaster_error_t
 getCertificateChain(std::vector<uint8_t>& chainBuffer, std::vector<Certificate>& certChain) {
     uint8_t *data = chainBuffer.data();
-    int index = 0;
+    size_t index = 0;
     uint32_t length = 0;
-    while (index < chainBuffer.size()) {
+    size_t bufSize = chainBuffer.size();
+    while (index < bufSize) {
         std::vector<uint8_t> temp;
         if(data[index] == TAG_SEQUENCE) {
+            if (index + 1 >= bufSize) return KM_ERROR_UNKNOWN_ERROR;
             // Short form. One octet. Bit 8 has value "0" and bits 7-1 give the length.
             if (0 == (data[index+1] & LENGTH_MASK)) {
-                length = (uint32_t)data[index];
+                length = (uint32_t)data[index+1];
                 //Add SEQ and Length fields
                 length += 2;
             } else {
@@ -573,14 +628,17 @@ getCertificateChain(std::vector<uint8_t>& chainBuffer, std::vector<Certificate>&
                 // octets give the actual length.
                 int additionalBytes = data[index+1] & LENGTH_VALUE_MASK;
                 if (additionalBytes == 0x01) {
+                    if (index + 2 >= bufSize) return KM_ERROR_UNKNOWN_ERROR;
                     length = data[index+2];
                     //Add SEQ and Length fields
                     length += 3;
                 } else if (additionalBytes == 0x02) {
+                    if (index + 3 >= bufSize) return KM_ERROR_UNKNOWN_ERROR;
                     length = (data[index+2] << 8 | data[index+3]);
                     //Add SEQ and Length fields
                     length += 4;
                 } else if (additionalBytes == 0x04) {
+                    if (index + 5 >= bufSize) return KM_ERROR_UNKNOWN_ERROR;
                     length = data[index+2] << 24;
                     length |= data[index+3] << 16;
                     length |= data[index+4] << 8;
@@ -592,6 +650,7 @@ getCertificateChain(std::vector<uint8_t>& chainBuffer, std::vector<Certificate>&
                     return KM_ERROR_UNKNOWN_ERROR;
                 }
             }
+            if (length == 0 || index + length > bufSize) return KM_ERROR_UNKNOWN_ERROR;
             temp.insert(temp.end(), (data+index), (data+index+length));
             index += length;
             Certificate certificate;
@@ -606,6 +665,8 @@ getCertificateChain(std::vector<uint8_t>& chainBuffer, std::vector<Certificate>&
 }
 
 ScopedAStatus JavacardKeyMintDevice::setAdditionalAttestationInfo(const vector<KeyParameter>& info) {
+    const JavacardKeyMintDeviceApiMonitoring apiMonitoring(__func__);
+
     cppbor::Array request;
     // add key params
     cbor_.addKeyparameters(request, info);
@@ -615,8 +676,8 @@ ScopedAStatus JavacardKeyMintDevice::setAdditionalAttestationInfo(const vector<K
     
     #ifdef BUFFER_ATTEST_APDU 
       if (err != KM_ERROR_MODULE_HASH_ALREADY_SET){
-        LOG(ERROR) << "Save pending setAdditionalAttestationInfo request and continue.";
-        card_->storePendingAttestationInfo(info); 
+        LOG(INFO) << "Save pending setAdditionalAttestationInfo request and continue.";
+        card_->storePendingAttestationInfo(request);
         return ScopedAStatus::ok(); 
       } 
       #endif 
