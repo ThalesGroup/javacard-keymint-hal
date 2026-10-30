@@ -17,7 +17,7 @@
 #pragma once
 
 #include <ITransport.h>
-
+#include <mutex>
 #include "CborConverter.h"
 
 #define APDU_CLS 0x80
@@ -77,14 +77,11 @@ enum class Instruction {
     INS_SET_ATT_MODULE_INFO_CMD = KEYMINT_CMD_APDU_START + 48,
 };
 
-extern bool initialized;
-
 class JavacardSecureElement {
   public:
     explicit JavacardSecureElement(shared_ptr<ITransport> transport)
-        : transport_(transport), isEarlyBootEndedPending(false), isDeleteAllKeysPending(false), isInitPending(true) {
-        initialized = false;
-        transport_->openConnection();
+        : transport_(transport), initialized(false), isEarlyBootEndedPending(false), isDeleteAllKeysPending(false), isInitPending(true) {
+        if (transport_) transport_->openConnection();
     }
     virtual ~JavacardSecureElement() { transport_->closeConnection(); }
 
@@ -105,7 +102,7 @@ class JavacardSecureElement {
     void setDeleteAllKeysPending();
 
 #ifdef BUFFER_ATTEST_APDU
-    void storePendingAttestationInfo(const vector<KeyParameter>& keyParams);
+    void storePendingAttestationInfo(const cppbor::Array& request);
 #endif
 
     inline uint16_t getApduStatus(std::vector<uint8_t>& inputData) {
@@ -117,12 +114,17 @@ class JavacardSecureElement {
 
   private:
     shared_ptr<ITransport> transport_;
+    bool initialized;
     bool isEarlyBootEndedPending;
     bool isDeleteAllKeysPending;
     bool isInitPending;
     CborConverter cbor_;
 #ifdef BUFFER_ATTEST_APDU
-    vector<KeyParameter> pendingAttestationInfo;
+    std::mutex pendingAttestationInfoMutex_;
+    // Fully encoded APDU command bytes of the pending setAdditionalAttestationInfo
+    // request. Storing bytes (instead of a live cppbor::Array) keeps the buffered
+    // path free of cppbor Item lifetime/ownership hazards.
+    std::vector<uint8_t> pendingAttestationInfoRequest;
 #endif
 };
 }  // namespace keymint::javacard

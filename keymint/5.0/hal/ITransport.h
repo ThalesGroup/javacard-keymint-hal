@@ -46,6 +46,8 @@ class ITransport {
      * Closes the connection.
      */
     virtual keymaster_error_t closeConnection() = 0;
+    
+    virtual bool tryCloseConnection() { return closeConnection() == KM_ERROR_OK; }
     /**
      * Returns the state of the connection status. Returns true if the connection is active, false
      * if connection is broken.

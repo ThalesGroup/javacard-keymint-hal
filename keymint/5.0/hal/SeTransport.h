@@ -1,5 +1,7 @@
 #pragma once
 
+#define ENABLE_SESSION_TIMEOUT
+
 #include <map>
 #include <memory>
 #include <vector>
@@ -16,12 +18,13 @@
 #include <android/binder_manager.h>
 
 #include "ITransport.h"
-
-// Session timeout
-#define SESSION_TIMEOUT_20S (20000)  // 20 s
-#define SESSION_TIMEOUT_300S (300000) // 300s
+#include <aidl/android/hardware/secure_element/BnSecureElementCallback.h>
 #include <aidl/android/hardware/secure_element/ISecureElement.h>
 using aidl::android::hardware::secure_element::ISecureElement;
+
+#ifdef ENABLE_SESSION_TIMEOUT
+#include "SessionTimer.h"
+#endif
 
 namespace keymint::javacard {
 using std::vector;
@@ -34,8 +37,8 @@ using std::vector;
 class SeTransport : public ITransport {
 
   public:
-    SeTransport() : secure_element(nullptr), channel_number(0) , channelOpenned(false){
-    }
+    SeTransport();
+    ~SeTransport();
     /**
      * Gets the binder instance of ISEService, gets te reader corresponding to secure element,
      * establishes a session and opens a basic channel.
@@ -56,15 +59,31 @@ class SeTransport : public ITransport {
      */
     bool isConnected() override;
 
+    /**
+     * Try to closes the connection. this method should be only used by sessionTimer
+     * If mutex is already used, return a busy error.
+     */
+    bool tryCloseConnection();
+
   private:
     std::shared_ptr<ISecureElement> secure_element;
+    std::shared_ptr<aidl::android::hardware::secure_element::BnSecureElementCallback> secure_element_callback_;
     int channel_number;
     bool channelOpenned;
     keymaster_error_t initialize();
     bool
     internalTransmitApdu(std::shared_ptr<ISecureElement> secure_element_,
                          std::vector<uint8_t> apdu, std::vector<uint8_t>& transmitResponse);
+    keymaster_error_t _openConnection();
+    keymaster_error_t _sendData(const vector<uint8_t>& inData, vector<uint8_t>& output);
+    keymaster_error_t _closeConnection();
+    bool _isConnected();
     std::mutex connectionMutex;
+    std::mutex timerMutex;
+#ifdef ENABLE_SESSION_TIMEOUT
+    Timer sessionTimer;
+    int sessionCount = 0;
+#endif
 };
 
 }

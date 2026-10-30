@@ -1,8 +1,14 @@
 #pragma once
 
+#define ENABLE_SESSION_TIMEOUT
+
 #include <map>
 #include <memory>
 #include <vector>
+
+#ifdef ENABLE_SESSION_TIMEOUT
+#include "SessionTimer.h"
+#endif
 
 
 #include <aidl/android/se/omapi/BnSecureElementListener.h>
@@ -16,10 +22,6 @@
 #include <android/binder_manager.h>
 
 #include "ITransport.h"
-
-// Session timeout
-#define SESSION_TIMEOUT_20S (20000)  // 20 s
-#define SESSION_TIMEOUT_300S (300000) // 300s
 
 namespace keymint::javacard {
 using std::vector;
@@ -54,6 +56,8 @@ class OmapiTransport : public ITransport {
      * if connection is broken.
      */
     bool isConnected() override;
+    
+    bool tryCloseConnection() override;
 
   private:
     std::shared_ptr<aidl::android::se::omapi::ISecureElementService> omapiSeService;
@@ -67,6 +71,10 @@ class OmapiTransport : public ITransport {
     internalTransmitApdu(std::shared_ptr<aidl::android::se::omapi::ISecureElementReader> reader,
                          std::vector<uint8_t> apdu, std::vector<uint8_t>& transmitResponse);
     std::mutex connectionMutex;
+#ifdef ENABLE_SESSION_TIMEOUT
+    Timer omapiSessionTimer;
+    int sessionCount = 0;
+#endif
 };
 
 }

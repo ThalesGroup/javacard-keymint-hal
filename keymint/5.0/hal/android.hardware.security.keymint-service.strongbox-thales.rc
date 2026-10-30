@@ -2,7 +2,7 @@ service vendor.keymint-strongbox /vendor/bin/hw/android.hardware.security.keymin
     class early_hal
     user root
     group root
-    seclabel u:r:su:s0
+    seclabel u:r:hal_keymint_default:s0
 
 on init
   setprop ro.strongbox.manufacturer "Thales"

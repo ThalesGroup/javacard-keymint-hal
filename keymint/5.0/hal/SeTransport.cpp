@@ -14,7 +14,7 @@
  ** See the License for the specific language governing permissions and
  ** limitations under the License.
  */
-#define LOG_TAG "SeTransport"
+#define LOG_TAG "Keymint-SeTransport"
 #include "SeTransport.h"
 
 #include <arpa/inet.h>
@@ -31,8 +31,6 @@
 #include <android-base/logging.h>
 #include <android-base/properties.h>
 
-#define ENABLE_SESSION_TIMEOUT
-#include "SessionTimer.h"
 #include <stdlib.h>
 #include <binder/IBinder.h>
 #include <binder/IServiceManager.h>
@@ -69,10 +67,6 @@ constexpr const char omapiServiceName[] =
 
 class SEListener : public ::aidl::android::se::omapi::BnSecureElementListener {};
 
-#ifdef ENABLE_SESSION_TIMEOUT
-Timer sessionTimer;
-#endif
-
 class MySecureElementCallback : public BnSecureElementCallback {
   public:
     ScopedAStatus onStateChange(bool state, const std::string& debugReason) override {
@@ -80,30 +74,61 @@ class MySecureElementCallback : public BnSecureElementCallback {
     };
 };
 
-std::shared_ptr<ISecureElement> secure_element_;
-std::shared_ptr<MySecureElementCallback> secure_element_callback_;
+std::shared_ptr<ISecureElement> getSecureElementService(
+        std::shared_ptr<BnSecureElementCallback>& out_callback) {
+    SpAIBinder binder = SpAIBinder(AServiceManager_checkService("android.hardware.secure_element.ISecureElement/eSE1"));
+    if(binder.get() == nullptr){
+      LOG(ERROR) << "Failed to get secure element service binder";
+      return nullptr;
+    }
 
-std::shared_ptr<ISecureElement> getSecureElementService() {
-    SpAIBinder binder = SpAIBinder(AServiceManager_waitForService("android.hardware.secure_element.ISecureElement/eSE1"));
+    auto se = ISecureElement::fromBinder(binder);
+    if(se == nullptr) return nullptr;
 
-    secure_element_ = ISecureElement::fromBinder(binder);
-    if(secure_element_ == nullptr) return nullptr;
+    out_callback = SharedRefBase::make<MySecureElementCallback>();
+    if(out_callback == nullptr) return nullptr;
 
-    secure_element_callback_ = SharedRefBase::make<MySecureElementCallback>();
-    if(secure_element_callback_ == nullptr) return nullptr;
+    auto res = se->init(out_callback);
+    if (!res.isOk()) {
+        LOG(ERROR) << "Failed to init secure element: " << res.getMessage();
+        return nullptr;
+    }
 
-    secure_element_->init(secure_element_callback_);
+    return se;
+}
 
-    return secure_element_;
+SeTransport::SeTransport() : secure_element(nullptr), channel_number(0) , channelOpenned(false){
+    LOG(DEBUG) << "SeTransport: constructor called";
+
+#ifdef ENABLE_SESSION_TIMEOUT
+    std::lock_guard<std::mutex> timerLock(timerMutex);
+    sessionTimer.init(this);
+#endif
+}
+
+SeTransport::~SeTransport() {
+    LOG(DEBUG) << "SeTransport: destructor called";
+#ifdef ENABLE_SESSION_TIMEOUT
+    {
+        std::lock_guard<std::mutex> timerLock(timerMutex);
+        sessionTimer.stop(); // disarms timer and wait end of timer callback if started
+        sessionTimer.release();
+    }
+#endif
+
+    std::lock_guard<std::mutex> lock(connectionMutex);
+    _closeConnection();
 }
 
 static uint8_t initCounter = 0;
 keymaster_error_t SeTransport::initialize() {
     std::vector<std::string> readers = {};
     LOG(DEBUG) << "Initialize the secure element connection";
+    
+    #ifdef ENABLE_SESSION_TIMEOUT
+      sessionCount = 0;
+    #endif // ENABLE_SESSION_TIMEOUT
 
-    sessionTimer.count = 0;
-    LOG(INFO) << "Initialize the secure element connection";
 
     if(android::base::GetProperty(PROP_KEYMINT_VENDOR, "") != "Google") {
         LOG(DEBUG) << "Initialize the AID to be Thales";
@@ -115,23 +140,25 @@ keymaster_error_t SeTransport::initialize() {
         AID_SIZE = 9;
     }
 
-        secure_element = getSecureElementService();
+        secure_element = getSecureElementService(secure_element_callback_);
 
         if (secure_element == nullptr) {
         LOG(ERROR) << "Failed to start SEHAL service null";
         return static_cast<keymaster_error_t>(KM_ERROR_HARDWARE_NOT_YET_AVAILABLE);
     }
-
+    
     int size = AID_SIZE;
     bool isSecureElementPresent = false;
     auto res = secure_element->isCardPresent(&isSecureElementPresent);
 
     if (!res.isOk()) {
         LOG(ERROR) << "isSecureElementPresent error: " << res.getMessage();
+        secure_element = nullptr;
         return static_cast<keymaster_error_t>(KM_ERROR_HARDWARE_TYPE_UNAVAILABLE);
     }
     if (!isSecureElementPresent) {
         LOG(ERROR) << "secure element not found";
+        secure_element = nullptr;
         return static_cast<keymaster_error_t>(KM_ERROR_HARDWARE_TYPE_UNAVAILABLE);
     }
 
@@ -139,24 +166,30 @@ keymaster_error_t SeTransport::initialize() {
 }
 
 bool SeTransport::internalTransmitApdu(
-    std::shared_ptr<ISecureElement> secure_element_,
+    std::shared_ptr<ISecureElement> se,
     std::vector<uint8_t> apdu, std::vector<uint8_t>& transmitResponse) {
 
-    std::future<bool> result = std::async(std::launch::async, [this, secure_element_, apdu, &transmitResponse]() {
-        std::lock_guard<std::mutex> lock(connectionMutex);
+    std::future<bool> result = std::async(std::launch::async, [this, se, apdu, &transmitResponse]() {
 
-        std::vector<uint8_t> cmd = apdu;
-        LogicalChannelResponse logical_channel_response;
-        LOG(DEBUG) << "internalTransmitApdu: trasmitting data to secure element";
+    std::vector<uint8_t> cmd = apdu;
+    LogicalChannelResponse logical_channel_response;
+    LOG(DEBUG) << "internalTransmitApdu: transmitting data to secure element";
 
 #ifdef ENABLE_SESSION_TIMEOUT
-        // Stop the timer
-        LOG(DEBUG) << "Stop timeout if any.";
-        sessionTimer.stop();
+        {
+            std::lock_guard<std::mutex> timerLock(timerMutex);
+            LOG(DEBUG) << "Stop timeout if any.";
+            sessionTimer.stop();
+        }
 #endif
 
-        if (secure_element_ == nullptr) {
+        if (secure_element == nullptr) {
             LOG(ERROR) << "eSE is null";
+            return false;
+        }
+
+        if( cmd.empty() ) {
+            LOG(ERROR) << "APDU command is empty";
             return false;
         }
 
@@ -165,7 +198,7 @@ bool SeTransport::internalTransmitApdu(
         int size = AID_SIZE;
         std::vector<uint8_t> aid(KEYMINT_APPLET_AID, KEYMINT_APPLET_AID + size);
         if (!channelOpenned) {
-            res = secure_element_->openLogicalChannel(aid, 0x00, &logical_channel_response);
+            res = se->openLogicalChannel(aid, 0x00, &logical_channel_response);
             if (!res.isOk()) {
                 LOG(ERROR) << "openLogicalChannel error: " << res.getMessage();
                 return false;
@@ -176,6 +209,7 @@ bool SeTransport::internalTransmitApdu(
             }
             channel_number = logical_channel_response.channelNumber;
             channelOpenned = true;
+            LOG(DEBUG) << "openLogicalChannel: channel=" << channel_number;
 
             if (logical_channel_response.selectResponse.empty()) {
                 LOG(ERROR) << "logical_channel_response.selectResponse == nullptr ";
@@ -191,36 +225,50 @@ bool SeTransport::internalTransmitApdu(
             }
         }
 
-        int ext_channelNumber;
-        if (channel_number > 0x03) {
-          ext_channelNumber = 0x40 + (channel_number - 0x04);
+        // Rewrite CLA byte per ISO 7816-4: clear channel bits first, then encode.
+        // Mirrors OMAPI Channel.java setChannelToClassByte logic.
+        if (channel_number < 4) {
+            // First interindustry class byte: clear bits[1:0] and bit6, preserve SM bits.
+            cmd[0] = (cmd[0] & 0xBC) | (uint8_t)channel_number;
         } else {
-            ext_channelNumber = channel_number;
+            // Further interindustry class byte: clear bits[3:0] and bit6, set bit6 + offset.
+            cmd[0] = (cmd[0] & 0xB0) | 0x40 | (uint8_t)(channel_number - 4);
         }
-        cmd[0] |= ext_channelNumber;
 
-        res = secure_element_->transmit(cmd, &transmitResponse);
+        res = se->transmit(cmd, &transmitResponse);
 
-        LOG(INFO) << "STATUS OF TRNSMIT: " << res.getExceptionCode()
+        LOG(INFO) << "STATUS OF TRANSMIT: " << res.getExceptionCode()
                   << " Message: " << res.getMessage();
+
+#ifdef ENABLE_SESSION_TIMEOUT
+        {
+            LOG(DEBUG) << "Start timeout before closing channels ";
+            if ( apdu.size() > 2 && apdu.at(1) == 0x30 ) {
+                sessionCount ++;
+                LOG(DEBUG) << "Session opened, count=" << sessionCount;
+            } else if ( apdu.size() > 2 && ( apdu.at(1) == 0x32 || apdu.at(1) == 0x33) ) {
+                if( sessionCount >= 1)
+                    sessionCount--;
+                LOG(DEBUG) << "Session closed, count=" << sessionCount;
+            }
+            if ( sessionCount > 0 ) {
+                LOG(DEBUG) << "Active sessions, using 300s timeout";
+
+                std::lock_guard<std::mutex> timerLock(timerMutex);
+                sessionTimer.start(SESSION_TIMEOUT_300S);
+            } else {
+                LOG(DEBUG) << "No active sessions, using 20s timeout";
+
+                std::lock_guard<std::mutex> timerLock(timerMutex);
+                sessionTimer.start(SESSION_TIMEOUT_20S);
+            }
+        }
+#endif
+
         if (!res.isOk()) {
             LOG(ERROR) << "transmit error: " << res.getMessage();
             return false;
         }
-
-#ifdef ENABLE_SESSION_TIMEOUT
-        LOG(DEBUG) << "Start timeout before closing channels ";
-        if ( apdu.size() > 2 && apdu.at(1) == 0x30 ) {
-            sessionTimer.count++;
-        } else if ( apdu.size() > 2 && ( apdu.at(1) == 0x32 || apdu.at(1) == 0x33) ) {
-            sessionTimer.count--;
-        }
-        if ( sessionTimer.count > 0 ) {
-            sessionTimer.start(SESSION_TIMEOUT_300S, this);
-        } else {
-            sessionTimer.start(SESSION_TIMEOUT_20S, this);
-        }
-#endif
 
         return true;
     });
@@ -228,24 +276,40 @@ bool SeTransport::internalTransmitApdu(
 }
 
 keymaster_error_t SeTransport::openConnection() {
+    std::lock_guard<std::mutex> lock(connectionMutex);
+    return _openConnection();
+}
 
+keymaster_error_t SeTransport::_openConnection() {
+    LOG(DEBUG) << "SeTransport: openConnection";
     // if already conection setup done, no need to initialise it again.
-    if (isConnected()) {
+    if (_isConnected()) {
         return KM_ERROR_OK;
     }
     return initialize();
 }
 
 keymaster_error_t SeTransport::sendData(const vector<uint8_t>& inData, vector<uint8_t>& output) {
+    std::lock_guard<std::mutex> lock(connectionMutex);
+    return _sendData(inData, output);
+}
+
+keymaster_error_t SeTransport::_sendData(const vector<uint8_t>& inData, vector<uint8_t>& output) {
 
     std::vector<uint8_t> cmd = inData;
-    if (!isConnected()) {
+
+    if( inData.size() < 4 ) { // Minimal size 4 bytes (CLA/INS/P1/P2)
+        LOG(ERROR) << "Invalid data to send (min size)";
+        return KM_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (!_isConnected()) {
         // Try to initialize connection to eSE
         LOG(INFO) << "Failed to send data, try to initialize connection SE connection";
         auto res = initialize();
         if (res != KM_ERROR_OK) {
             LOG(ERROR) << "Failed to send data, initialization not completed";
-            closeConnection();
+            _closeConnection();
             return res;
         }
     }
@@ -254,10 +318,10 @@ keymaster_error_t SeTransport::sendData(const vector<uint8_t>& inData, vector<ui
         LOG(DEBUG) << "Sending apdu data to secure element: " << ESE_READER_PREFIX;
         if(internalTransmitApdu(secure_element, cmd, output)) {
             if(android::base::GetBoolProperty(PROP_KEYMINT_CLOSE_CHANNEL, false))
-                closeConnection();
+                _closeConnection();
             return KM_ERROR_OK;
         } else {
-            closeConnection();
+            _closeConnection();
             return KM_ERROR_SECURE_HW_COMMUNICATION_FAILED;
         }
     } else {
@@ -267,15 +331,49 @@ keymaster_error_t SeTransport::sendData(const vector<uint8_t>& inData, vector<ui
 }
 
 keymaster_error_t SeTransport::closeConnection() {
+
+#ifdef ENABLE_SESSION_TIMEOUT
+    {
+        // Stop the timer before closing connection
+        std::lock_guard<std::mutex> timerLock(timerMutex);
+        sessionTimer.stop(); // disarms timer and wait end of timer callback if started
+    }
+#endif
+
+    std::lock_guard<std::mutex> lock(connectionMutex);
+    return _closeConnection();
+}
+
+bool SeTransport::tryCloseConnection() { 
+    std::unique_lock<std::mutex> lock(connectionMutex, std::try_to_lock);
+    if (!lock.owns_lock())
+    {
+        // Unable to lock mutex -> do not close connection
+        LOG(ERROR) << "Unable to try to close connection (mutex already locked)";
+        return false;
+    }
+
+    return _closeConnection() == KM_ERROR_OK;
+}
+
+keymaster_error_t SeTransport::_closeConnection() {
     std::future<keymaster_error_t> result = std::async(std::launch::async, [this]() {
-        std::lock_guard<std::mutex> lock(connectionMutex);
         LOG(DEBUG) << "Closing all connections";
-        if (channel_number != 0) {
-            secure_element->closeChannel(channel_number);
-            channel_number = 0;
-            channelOpenned = false;
+        if (secure_element != nullptr) {
+            if (channel_number != 0) {
+                LOG(DEBUG) << "closeChannel: channel=" << channel_number;
+                if( !secure_element->closeChannel(channel_number).isOk() )
+                    LOG(WARNING) << "Unable to close channel!";
+
+                channel_number = 0;
+                channelOpenned = false;
+            }
+            // Release SE Callback first: SE HAL dead detection removes its reference to this callback
+            secure_element_callback_ = nullptr;
+            // Then release SE Service
+            secure_element = nullptr;
         }
-        if (secure_element != nullptr) secure_element = nullptr;
+
         return KM_ERROR_OK;
     });
     return result.get();
@@ -283,8 +381,13 @@ keymaster_error_t SeTransport::closeConnection() {
 
 bool SeTransport::isConnected() {
     // Check already initialization completed or not
+    std::lock_guard<std::mutex> lock(connectionMutex);
+    return _isConnected();
+}
+
+bool SeTransport::_isConnected() {
+    // Check already initialization completed or not
     std::future<bool> result = std::async(std::launch::async, [this]() {
-        std::lock_guard<std::mutex> lock(connectionMutex);
         if (secure_element != nullptr) {
             LOG(INFO) << "Connection initialization already completed";
             return true;

@@ -33,8 +33,6 @@
 
 namespace keymint::javacard {
 
-bool initialized = false;
-
 keymaster_error_t JavacardSecureElement::initializeJavacard() {
     Array request;
     request.add(Uint(getOsVersion()));
@@ -87,20 +85,33 @@ void JavacardSecureElement::sendPendingEvents() {
         }
 
         #ifdef BUFFER_ATTEST_APDU
-        if (!pendingAttestationInfo.empty()) {
-            cppbor::Array request;
-            cbor_.addKeyparameters(request, pendingAttestationInfo);
-            LOG(DEBUG) << "Send pending setAdditionalAttestationInfo";
-            auto [item, err] =
-                sendRequest(Instruction::INS_SET_ATT_MODULE_INFO_CMD, request);
-            if (err != KM_ERROR_OK) {
-                LOG(ERROR) << "Error sending setAdditionalAttestationInfo.";
-            } else {
-                LOG(INFO) << "setAdditionalAttestationInfo success";
+        {
+            // Buffer the fully encoded APDU command bytes instead of keeping a live
+            // cppbor::Array tree stored in the member and reset on every retry while
+            // the eSE is blocked (e.g. during eSE OTA). A long-lived cppbor::Array
+            // object surfaced as heap corruption in cppbor::Array::~Array (the fault
+            // address decoded to a string that overwrote the entries vector slot),
+            // crashing android.hardware.security.keymint-service.strongbox-thales.
+            // Storing flat bytes keeps the buffered path free of cppbor Item lifetime
+            // and ownership hazards and reuses the byte-based sendRequest() overload.
+            std::vector<uint8_t> toSend;
+            {
+                std::lock_guard<std::mutex> lock(pendingAttestationInfoMutex_);
+                toSend.swap(pendingAttestationInfoRequest);
             }
-            pendingAttestationInfo.clear();
+            if (!toSend.empty()) {
+                LOG(DEBUG) << "Send pending setAdditionalAttestationInfo";
+                auto [item, err] =
+                    sendRequest(Instruction::INS_SET_ATT_MODULE_INFO_CMD, toSend);
+                if (err != KM_ERROR_OK) {
+                    LOG(ERROR) << "Error sending setAdditionalAttestationInfo.";
+                } else {
+                    LOG(INFO) << "setAdditionalAttestationInfo success";
+                }
+            }
         }
         #endif
+
 
     }
 }
@@ -237,10 +248,15 @@ JavacardSecureElement::sendRequest(Instruction ins) {
 }
 
 #ifdef BUFFER_ATTEST_APDU
-void JavacardSecureElement::storePendingAttestationInfo(const vector<KeyParameter>& keyParams) {
+void JavacardSecureElement::storePendingAttestationInfo(const cppbor::Array& request) {
     LOG(INFO) << "Store Pending Attestation Info";
-    pendingAttestationInfo = keyParams;
+
+    // Encode the request to flat bytes under the lock and store only the buffer.
+    // This removes all cppbor Item ownership/lifetime from the stored/pending path.
+    std::lock_guard<std::mutex> lock(pendingAttestationInfoMutex_);
+    pendingAttestationInfoRequest = request.encode();
 }
 #endif
+
 
 }  // namespace keymint::javacard
