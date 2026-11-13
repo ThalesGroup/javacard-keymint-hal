@@ -36,7 +36,6 @@ cc_library {
     name: "libjc_keymint-thales",
     defaults: [
         "keymaster_defaults",
-        "keymint_use_latest_hal_aidl_ndk_shared",
     ],
     srcs: [
         "CborConverter.cpp",
@@ -49,10 +48,11 @@ cc_library {
     ],
     cflags: ["-O0", "-DKM400_ASN1"],
     shared_libs: [
+        "android.hardware.security.keymint-V3-ndk",
         "android.hardware.security.secureclock-V1-ndk",
         "android.hardware.security.sharedsecret-V1-ndk",
         "android.hardware.security.rkp-V3-ndk",
-        "lib_android_keymaster_keymint_utils",
+        "lib_android_keymaster_keymint_utils_V3",
         "libbase",
         "libcppbor_external",
         "libkeymaster_portable",
@@ -104,12 +104,10 @@ cc_binary {
         "-Wall",
         "-Wextra",
     ],
-    defaults: [
-        "keymint_use_latest_hal_aidl_ndk_shared",
-    ],
     shared_libs: [
+        "android.hardware.security.keymint-V3-ndk",
         "android.hardware.security.sharedsecret-V1-ndk",
-        "lib_android_keymaster_keymint_utils",
+        "lib_android_keymaster_keymint_utils_V3",
         "android.hardware.security.rkp-V3-ndk",
         "libbase",
         "libbinder_ndk",
