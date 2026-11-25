@@ -48,7 +48,8 @@ cc_library {
              "-O0",
              "-DKM400_ASN1",
              "-DOMAPI_TRANSPORT",
-             //"-DBUFFER_ATTEST_APDU"
+             //"-DBUFFER_ATTEST_APDU",
+             //"-DHAL_RNG_ENTROPY",
              ],
     shared_libs: [
         "android.hardware.security.keymint-V4-ndk",
