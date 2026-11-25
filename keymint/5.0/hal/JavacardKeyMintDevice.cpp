@@ -157,6 +157,12 @@ ScopedAStatus JavacardKeyMintDevice::generateKey(const vector<KeyParameter>& key
 ScopedAStatus JavacardKeyMintDevice::addRngEntropy(const vector<uint8_t>& data) {
     const JavacardKeyMintDeviceApiMonitoring apiMonitoring(__func__);
 
+#ifdef HAL_RNG_ENTROPY
+    if (data.size() > 2048) {
+        return km_utils::kmError2ScopedAStatus(KM_ERROR_INVALID_INPUT_LENGTH);
+    }
+    return ScopedAStatus::ok();
+#else
     cppbor::Array request;
     // add key data
     request.add(Bstr(data));
@@ -166,6 +172,7 @@ ScopedAStatus JavacardKeyMintDevice::addRngEntropy(const vector<uint8_t>& data) 
         return km_utils::kmError2ScopedAStatus(err);
     }
     return ScopedAStatus::ok();
+#endif
 }
 
 ScopedAStatus JavacardKeyMintDevice::importKey(const vector<KeyParameter>& keyParams,
